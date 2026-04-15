@@ -12,7 +12,8 @@ const {
   StringSelectMenuBuilder,
   REST,
   Routes,
-  SlashCommandBuilder
+  SlashCommandBuilder,
+  MessageFlags
 } = require("discord.js");
 
 const fs = require("fs");
@@ -67,7 +68,7 @@ function isAdmin(member) {
 const renameMap = new Map();
 
 // =====================
-// 🚀 تسجيل الأوامر تلقائي
+// 🚀 تسجيل الأوامر
 // =====================
 const commands = [
   new SlashCommandBuilder().setName("setup").setDescription("تحديد رتبة الإدارة"),
@@ -79,16 +80,16 @@ async function registerCommands() {
   const rest = new REST({ version: "10" }).setToken(TOKEN);
 
   try {
-    console.log("🚀 جاري تسجيل الأوامر...");
+    console.log("🚀 تسجيل الأوامر...");
 
     await rest.put(
       Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
       { body: commands }
     );
 
-    console.log("✅ تم تسجيل الأوامر فورًا");
+    console.log("✅ تم تسجيل الأوامر");
   } catch (err) {
-    console.error("❌ خطأ في تسجيل الأوامر:", err);
+    console.error(err);
   }
 }
 
@@ -122,13 +123,16 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.reply({
           content: "🎛️ اختر رتبة الإدارة",
           components: [new ActionRowBuilder().addComponents(menu)],
-          ephemeral: true
+          flags: MessageFlags.Ephemeral
         });
       }
 
       if (interaction.commandName === "setup-control") {
         if (!isAdmin(interaction.member))
-          return interaction.reply({ content: "❌ ما عندك صلاحية", ephemeral: true });
+          return interaction.reply({
+            content: "❌ ما عندك صلاحية",
+            flags: MessageFlags.Ephemeral
+          });
 
         const menu = new ChannelSelectMenuBuilder()
           .setCustomId("set_control_channel")
@@ -137,18 +141,24 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.reply({
           content: "🎛️ اختر روم الكنترول",
           components: [new ActionRowBuilder().addComponents(menu)],
-          ephemeral: true
+          flags: MessageFlags.Ephemeral
         });
       }
 
       if (interaction.commandName === "panel") {
         if (!isAdmin(interaction.member))
-          return interaction.reply({ content: "❌ ما عندك صلاحية", ephemeral: true });
+          return interaction.reply({
+            content: "❌ ما عندك صلاحية",
+            flags: MessageFlags.Ephemeral
+          });
 
         const channel = interaction.guild.channels.cache.get(config.channels.control);
 
         if (!channel)
-          return interaction.reply({ content: "❌ حدد روم الكنترول أول", ephemeral: true });
+          return interaction.reply({
+            content: "❌ حدد روم الكنترول أول",
+            flags: MessageFlags.Ephemeral
+          });
 
         const embed = new EmbedBuilder()
           .setTitle("🎛️ Control Panel")
@@ -164,7 +174,10 @@ client.on("interactionCreate", async (interaction) => {
 
         await channel.send({ embeds: [embed], components: [row] });
 
-        return interaction.reply({ content: "✅ تم إرسال اللوحة", ephemeral: true });
+        return interaction.reply({
+          content: "✅ تم إرسال اللوحة",
+          flags: MessageFlags.Ephemeral
+        });
       }
     }
 
@@ -173,7 +186,10 @@ client.on("interactionCreate", async (interaction) => {
         config.adminRole = interaction.values[0];
         saveConfig();
 
-        return interaction.reply({ content: "✅ تم حفظ رتبة الإدارة", ephemeral: true });
+        return interaction.reply({
+          content: "✅ تم حفظ رتبة الإدارة",
+          flags: MessageFlags.Ephemeral
+        });
       }
     }
 
@@ -182,14 +198,20 @@ client.on("interactionCreate", async (interaction) => {
         config.channels.control = interaction.values[0];
         saveConfig();
 
-        return interaction.reply({ content: "✅ تم حفظ روم الكنترول", ephemeral: true });
+        return interaction.reply({
+          content: "✅ تم حفظ روم الكنترول",
+          flags: MessageFlags.Ephemeral
+        });
       }
     }
 
     if (interaction.isButton()) {
 
       if (!isAdmin(interaction.member))
-        return interaction.reply({ content: "❌ ما عندك صلاحية", ephemeral: true });
+        return interaction.reply({
+          content: "❌ ما عندك صلاحية",
+          flags: MessageFlags.Ephemeral
+        });
 
       const channel = interaction.channel;
 
@@ -200,7 +222,10 @@ client.on("interactionCreate", async (interaction) => {
           parent: channel.parent
         });
 
-        return interaction.reply({ content: "✅ تم إنشاء روم", ephemeral: true });
+        return interaction.reply({
+          content: "✅ تم إنشاء روم",
+          flags: MessageFlags.Ephemeral
+        });
       }
 
       if (interaction.customId === "delete") {
@@ -213,7 +238,10 @@ client.on("interactionCreate", async (interaction) => {
           { [PermissionsBitField.Flags.SendMessages]: false }
         );
 
-        return interaction.reply({ content: "🔒 تم القفل", ephemeral: true });
+        return interaction.reply({
+          content: "🔒 تم القفل",
+          flags: MessageFlags.Ephemeral
+        });
       }
 
       if (interaction.customId === "unlock") {
@@ -222,7 +250,10 @@ client.on("interactionCreate", async (interaction) => {
           { [PermissionsBitField.Flags.SendMessages]: true }
         );
 
-        return interaction.reply({ content: "🔓 تم الفتح", ephemeral: true });
+        return interaction.reply({
+          content: "🔓 تم الفتح",
+          flags: MessageFlags.Ephemeral
+        });
       }
 
       if (interaction.customId === "rename") {
@@ -230,7 +261,7 @@ client.on("interactionCreate", async (interaction) => {
 
         return interaction.reply({
           content: "✏️ اكتب الاسم الجديد",
-          ephemeral: true
+          flags: MessageFlags.Ephemeral
         });
       }
     }
@@ -262,8 +293,4 @@ client.on("messageCreate", async (message) => {
 // =====================
 // 🔥 login
 // =====================
-console.log("TOKEN:", TOKEN ? "OK" : "MISSING");
-console.log("CLIENT_ID:", CLIENT_ID ? "OK" : "MISSING");
-console.log("GUILD_ID:", GUILD_ID ? "OK" : "MISSING");
-
 client.login(TOKEN);
