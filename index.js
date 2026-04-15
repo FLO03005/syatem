@@ -50,44 +50,50 @@ function addThreat(id, amount) {
 }
 
 // =====================
-// EMBED BUILDER (ALL LOGS)
+// WICKS STYLE EMBED (FINAL)
 // =====================
-function buildEmbed({ user, action, target, level = 0 }) {
+function wickLog({
+  type,
+  userName,
+  userId,
+  action,
+  targetName,
+  targetId,
+  room,
+  extra = [],
+  color
+}) {
   return new EmbedBuilder()
-    .setColor(level >= 6 ? "#ff0000" : level >= 3 ? "#ffa500" : "#2b2d31")
-    .setTitle("🚨 SECURITY LOG")
-    .setThumbnail(user?.displayAvatarURL?.({ dynamic: true }) || null)
+    .setColor(color || "#2f3136")
+    .setTitle(`📌 Log • ${type}`)
     .addFields(
       {
-        name: "👤 User",
-        value: `${user?.tag || "Unknown"}\n\`${user?.id || "N/A"}\``,
-        inline: true
+        name: "👤 اسم المستخدم",
+        value: `${userName}\n(${userId})`,
+        inline: false
       },
       {
-        name: "⚡ Action",
+        name: "⚡ الحدث",
         value: action,
+        inline: false
+      },
+      {
+        name: "🎯 المستهدف",
+        value: `${targetName || "غير معروف"}\n(${targetId || "-"})`,
+        inline: false
+      },
+      {
+        name: "🏷️ الروم",
+        value: room || "Unknown",
         inline: true
       },
       {
-        name: "📌 Target",
-        value: target || "None",
-        inline: true
-      },
-      {
-        name: "⚠️ Threat",
-        value: `\`${level}\``,
-        inline: true
-      },
-      {
-        name: "🛡️ Status",
-        value:
-          level >= 6 ? "🔴 CRITICAL" :
-          level >= 3 ? "🟠 WARNING" :
-          "🟢 SAFE",
-        inline: true
+        name: "📊 معلومات إضافية",
+        value: extra.length ? extra.join("\n") : "لا يوجد",
+        inline: false
       }
     )
-    .setFooter({ text: "Ultra Security System" })
+    .setFooter({ text: "Wicks Protection System" })
     .setTimestamp();
 }
 
@@ -106,7 +112,9 @@ function sendLog(guild, type, embed, files = null) {
 // COMMANDS
 // =====================
 const commands = [
-  new SlashCommandBuilder().setName("setup").setDescription("Create full security system")
+  new SlashCommandBuilder()
+    .setName("setup")
+    .setDescription("Create Wicks Style Security System")
 ].map(c => c.toJSON());
 
 async function register() {
@@ -135,15 +143,13 @@ client.on("interactionCreate", async (i) => {
     const g = i.guild;
 
     const cat = await g.channels.create({
-      name: "🛡️ SECURITY SYSTEM",
+      name: "🛡️ WICKS SYSTEM",
       type: ChannelType.GuildCategory
     });
 
-    const types = ["messages", "members", "channels", "security"];
-
     const logs = {};
 
-    for (const t of types) {
+    for (const t of ["messages", "members", "channels", "security"]) {
       const ch = await g.channels.create({
         name: `log-${t}`,
         type: ChannelType.GuildText,
@@ -157,14 +163,14 @@ client.on("interactionCreate", async (i) => {
     saveConfig();
 
     return i.reply({
-      content: "🛡️ System Activated",
+      content: "🛡️ Wicks System Activated",
       flags: MessageFlags.Ephemeral
     });
   }
 });
 
 // =====================
-// MESSAGE CACHE (FOR IMAGES)
+// MESSAGE CACHE (FOR FILES)
 // =====================
 client.on("messageCreate", (m) => {
   if (!m.guild) return;
@@ -182,16 +188,21 @@ client.on("messageCreate", (m) => {
 client.on("messageDelete", (m) => {
   const data = cache.get(m.id);
 
-  const embed = buildEmbed({
-    user: data?.author || m.author,
-    action: "Message Deleted",
-    target: m.channel.name,
-    level: 1
+  const embed = wickLog({
+    type: "Messages",
+    userName: data?.author?.tag || m.author?.tag,
+    userId: data?.author?.id || m.author?.id,
+    action: "حذف رسالة",
+    targetName: m.channel.name,
+    targetId: m.channel.id,
+    room: "Log • Messages",
+    extra: [
+      `💬 المحتوى: ${data?.content || "لا يوجد"}`
+    ],
+    color: "#ED4245"
   });
 
-  const files = data?.files?.length ? data.files : null;
-
-  sendLog(m.guild, "messages", embed, files);
+  sendLog(m.guild, "messages", embed, data?.files);
 
   addThreat(m.author?.id, 0.5);
   cache.delete(m.id);
@@ -203,11 +214,19 @@ client.on("messageDelete", (m) => {
 client.on("messageUpdate", (oldMsg, newMsg) => {
   if (!oldMsg.guild) return;
 
-  const embed = buildEmbed({
-    user: oldMsg.author,
-    action: "Message Edited",
-    target: oldMsg.channel.name,
-    level: 1
+  const embed = wickLog({
+    type: "Messages",
+    userName: oldMsg.author?.tag,
+    userId: oldMsg.author?.id,
+    action: "تعديل رسالة",
+    targetName: oldMsg.channel.name,
+    targetId: oldMsg.channel.id,
+    room: "Log • Messages",
+    extra: [
+      `✏️ قبل: ${oldMsg.content || "لا يوجد"}`,
+      `📝 بعد: ${newMsg.content || "لا يوجد"}`
+    ],
+    color: "#FEE75C"
   });
 
   sendLog(oldMsg.guild, "messages", embed);
@@ -228,18 +247,23 @@ client.on("channelDelete", async (channel) => {
 
   const level = addThreat(user.id, 3);
 
-  const embed = buildEmbed({
-    user,
-    action: "Channel Deleted",
-    target: channel.name,
-    level
+  const embed = wickLog({
+    type: "Channel",
+    userName: user.tag,
+    userId: user.id,
+    action: "حذف روم",
+    targetName: channel.name,
+    targetId: channel.id,
+    room: "Log • Channel",
+    extra: [`⚠️ Threat: ${level}`],
+    color: level >= 6 ? "#FF0000" : "#FFA500"
   });
 
   sendLog(channel.guild, "security", embed);
 
   if (member) {
     if (level >= 3) member.timeout(60 * 1000);
-    if (level >= 6) member.ban({ reason: "Anti-Nuke System" });
+    if (level >= 6) member.ban({ reason: "Wicks Anti-Nuke" });
   }
 
   if (level >= 6) {
@@ -259,11 +283,16 @@ client.on("guildBanAdd", async (ban) => {
 
   const level = addThreat(user.id, 4);
 
-  const embed = buildEmbed({
-    user,
-    action: "Mass Ban",
-    target: ban.user.tag,
-    level
+  const embed = wickLog({
+    type: "Ban",
+    userName: user.tag,
+    userId: user.id,
+    action: "حظر جماعي",
+    targetName: ban.user.tag,
+    targetId: ban.user.id,
+    room: "Log • Ban",
+    extra: [`🚨 Threat: ${level}`],
+    color: "#FF0000"
   });
 
   sendLog(ban.guild, "security", embed);
