@@ -226,4 +226,4 @@ client.on("messageDelete", async (message) => {
 });
 
 // =====================
-client.login("PUT_YOUR_TOKEN_HERE");
+client.login("توكنك_هنا");
