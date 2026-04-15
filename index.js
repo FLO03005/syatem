@@ -22,9 +22,7 @@ const GUILD_ID = process.env.GUILD_ID;
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.GuildMembers
   ],
   partials: [Partials.Channel]
 });
@@ -42,7 +40,6 @@ function saveConfig() {
 // THREAT SYSTEM
 // =====================
 const threat = new Map();
-const cache = new Map();
 
 function addThreat(id, amount) {
   threat.set(id, (threat.get(id) || 0) + amount);
@@ -50,7 +47,7 @@ function addThreat(id, amount) {
 }
 
 // =====================
-// WICKS STYLE EMBED (FINAL)
+// EMBED
 // =====================
 function wickLog({
   type,
@@ -68,44 +65,37 @@ function wickLog({
     .setTitle(`📌 Log • ${type}`)
     .addFields(
       {
-        name: "👤 اسم المستخدم",
-        value: `${userName}\n(${userId})`,
-        inline: false
+        name: "👤 المستخدم",
+        value: `${userName}\n(${userId})`
       },
       {
         name: "⚡ الحدث",
-        value: action,
-        inline: false
+        value: action
       },
       {
         name: "🎯 المستهدف",
-        value: `${targetName || "غير معروف"}\n(${targetId || "-"})`,
-        inline: false
+        value: `${targetName}\n(${targetId})`
       },
       {
         name: "🏷️ الروم",
-        value: room || "Unknown",
+        value: room,
         inline: true
       },
       {
-        name: "📊 معلومات إضافية",
-        value: extra.length ? extra.join("\n") : "لا يوجد",
-        inline: false
+        name: "📊 إضافي",
+        value: extra.length ? extra.join("\n") : "لا يوجد"
       }
     )
-    .setFooter({ text: "Wicks Protection System" })
     .setTimestamp();
 }
 
 // =====================
 // LOG SENDER
 // =====================
-function sendLog(guild, type, embed, files = null) {
+function sendLog(guild, type, embed) {
   const ch = guild.channels.cache.get(config.logs[type]);
   if (!ch) return;
-
-  if (files) ch.send({ embeds: [embed], files });
-  else ch.send({ embeds: [embed] });
+  ch.send({ embeds: [embed] });
 }
 
 // =====================
@@ -114,7 +104,7 @@ function sendLog(guild, type, embed, files = null) {
 const commands = [
   new SlashCommandBuilder()
     .setName("setup")
-    .setDescription("Create Wicks Style Security System")
+    .setDescription("Create Wicks Security System")
 ].map(c => c.toJSON());
 
 async function register() {
@@ -125,16 +115,13 @@ async function register() {
   );
 }
 
-// =====================
-// READY
-// =====================
 client.once("ready", async () => {
   console.log(`Logged in as ${client.user.tag}`);
   await register();
 });
 
 // =====================
-// SETUP SYSTEM
+// SETUP
 // =====================
 client.on("interactionCreate", async (i) => {
   if (!i.isChatInputCommand()) return;
@@ -149,9 +136,13 @@ client.on("interactionCreate", async (i) => {
 
     const logs = {};
 
-    for (const t of ["messages", "members", "channels", "security"]) {
+    for (const t of [
+      "roles-add",
+      "roles-remove",
+      "roles-delete"
+    ]) {
       const ch = await g.channels.create({
-        name: `log-${t}`,
+        name: t,
         type: ChannelType.GuildText,
         parent: cat.id
       });
@@ -163,143 +154,90 @@ client.on("interactionCreate", async (i) => {
     saveConfig();
 
     return i.reply({
-      content: "🛡️ Wicks System Activated",
+      content: "✅ System Ready",
       flags: MessageFlags.Ephemeral
     });
   }
 });
 
 // =====================
-// MESSAGE CACHE (FOR FILES)
+// ROLE ADD / REMOVE
 // =====================
-client.on("messageCreate", (m) => {
-  if (!m.guild) return;
+client.on("guildMemberUpdate", async (oldM, newM) => {
+  const added = newM.roles.cache.filter(r => !oldM.roles.cache.has(r.id));
+  const removed = oldM.roles.cache.filter(r => !newM.roles.cache.has(r.id));
 
-  cache.set(m.id, {
-    content: m.content,
-    files: [...m.attachments.values()].map(a => a.url),
-    author: m.author
-  });
+  if (!added.size && !removed.size) return;
+
+  const logs = await newM.guild.fetchAuditLogs({ type: 25, limit: 1 });
+  const entry = logs.entries.first();
+  const executor = entry?.executor;
+
+  // ADD
+  if (added.size) {
+    const embed = wickLog({
+      type: "Role Add",
+      userName: executor?.tag || "Unknown",
+      userId: executor?.id || "-",
+      action: "إعطاء رتبة",
+      targetName: newM.user.tag,
+      targetId: newM.user.id,
+      room: "Role Add",
+      extra: [`🎭 ${added.map(r => r.name).join(", ")}`],
+      color: "#57F287"
+    });
+
+    sendLog(newM.guild, "roles-add", embed);
+  }
+
+  // REMOVE
+  if (removed.size) {
+    const embed = wickLog({
+      type: "Role Remove",
+      userName: executor?.tag || "Unknown",
+      userId: executor?.id || "-",
+      action: "إزالة رتبة",
+      targetName: newM.user.tag,
+      targetId: newM.user.id,
+      room: "Role Remove",
+      extra: [`❌ ${removed.map(r => r.name).join(", ")}`],
+      color: "#ED4245"
+    });
+
+    sendLog(newM.guild, "roles-remove", embed);
+  }
 });
 
 // =====================
-// MESSAGE DELETE
+// ROLE DELETE
 // =====================
-client.on("messageDelete", (m) => {
-  const data = cache.get(m.id);
-
-  const embed = wickLog({
-    type: "Messages",
-    userName: data?.author?.tag || m.author?.tag,
-    userId: data?.author?.id || m.author?.id,
-    action: "حذف رسالة",
-    targetName: m.channel.name,
-    targetId: m.channel.id,
-    room: "Log • Messages",
-    extra: [
-      `💬 المحتوى: ${data?.content || "لا يوجد"}`
-    ],
-    color: "#ED4245"
-  });
-
-  sendLog(m.guild, "messages", embed, data?.files);
-
-  addThreat(m.author?.id, 0.5);
-  cache.delete(m.id);
-});
-
-// =====================
-// MESSAGE EDIT
-// =====================
-client.on("messageUpdate", (oldMsg, newMsg) => {
-  if (!oldMsg.guild) return;
-
-  const embed = wickLog({
-    type: "Messages",
-    userName: oldMsg.author?.tag,
-    userId: oldMsg.author?.id,
-    action: "تعديل رسالة",
-    targetName: oldMsg.channel.name,
-    targetId: oldMsg.channel.id,
-    room: "Log • Messages",
-    extra: [
-      `✏️ قبل: ${oldMsg.content || "لا يوجد"}`,
-      `📝 بعد: ${newMsg.content || "لا يوجد"}`
-    ],
-    color: "#FEE75C"
-  });
-
-  sendLog(oldMsg.guild, "messages", embed);
-});
-
-// =====================
-// CHANNEL DELETE (ANTI NUKE)
-// =====================
-client.on("channelDelete", async (channel) => {
-  if (!channel.guild) return;
-
-  const logs = await channel.guild.fetchAuditLogs({ type: 12, limit: 1 });
+client.on("roleDelete", async (role) => {
+  const logs = await role.guild.fetchAuditLogs({ type: 32, limit: 1 });
   const entry = logs.entries.first();
   if (!entry) return;
 
   const user = entry.executor;
-  const member = await channel.guild.members.fetch(user.id).catch(() => null);
-
   const level = addThreat(user.id, 3);
 
   const embed = wickLog({
-    type: "Channel",
+    type: "Role Delete",
     userName: user.tag,
     userId: user.id,
-    action: "حذف روم",
-    targetName: channel.name,
-    targetId: channel.id,
-    room: "Log • Channel",
+    action: "حذف رتبة",
+    targetName: role.name,
+    targetId: role.id,
+    room: "Role Delete",
     extra: [`⚠️ Threat: ${level}`],
     color: level >= 6 ? "#FF0000" : "#FFA500"
   });
 
-  sendLog(channel.guild, "security", embed);
+  sendLog(role.guild, "roles-delete", embed);
+
+  const member = await role.guild.members.fetch(user.id).catch(() => null);
 
   if (member) {
     if (level >= 3) member.timeout(60 * 1000);
-    if (level >= 6) member.ban({ reason: "Wicks Anti-Nuke" });
-  }
-
-  if (level >= 6) {
-    channel.guild.roles.everyone.setPermissions([]);
-  }
-});
-
-// =====================
-// MASS BAN
-// =====================
-client.on("guildBanAdd", async (ban) => {
-  const logs = await ban.guild.fetchAuditLogs({ type: 22, limit: 1 });
-  const entry = logs.entries.first();
-  if (!entry) return;
-
-  const user = entry.executor;
-
-  const level = addThreat(user.id, 4);
-
-  const embed = wickLog({
-    type: "Ban",
-    userName: user.tag,
-    userId: user.id,
-    action: "حظر جماعي",
-    targetName: ban.user.tag,
-    targetId: ban.user.id,
-    room: "Log • Ban",
-    extra: [`🚨 Threat: ${level}`],
-    color: "#FF0000"
-  });
-
-  sendLog(ban.guild, "security", embed);
-
-  if (level >= 6) {
-    const member = await ban.guild.members.fetch(user.id).catch(() => null);
-    if (member) member.ban({ reason: "Mass Ban Protection" });
+    if (level >= 6) member.ban({ reason: "Role Delete Protection" });
   }
 });
 
