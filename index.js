@@ -4,7 +4,6 @@ const {
   Partials,
   EmbedBuilder,
   ChannelType,
-  PermissionsBitField,
   REST,
   Routes,
   SlashCommandBuilder,
@@ -43,6 +42,7 @@ function saveConfig() {
 // THREAT SYSTEM
 // =====================
 const threat = new Map();
+const cache = new Map();
 
 function addThreat(id, amount) {
   threat.set(id, (threat.get(id) || 0) + amount);
@@ -50,35 +50,63 @@ function addThreat(id, amount) {
 }
 
 // =====================
-// MESSAGE CACHE (FOR IMAGES)
+// EMBED BUILDER (ALL LOGS)
 // =====================
-const messageCache = new Map();
-
-// =====================
-// LOG SYSTEM
-// =====================
-function sendLog(guild, title, desc, color = "#2b2d31") {
-  const ch = guild.channels.cache.get(config.logs?.main);
-  if (!ch) return;
-
-  ch.send({
-    embeds: [
-      new EmbedBuilder()
-        .setTitle(title)
-        .setDescription(desc)
-        .setColor(color)
-        .setTimestamp()
-    ]
-  });
+function buildEmbed({ user, action, target, level = 0 }) {
+  return new EmbedBuilder()
+    .setColor(level >= 6 ? "#ff0000" : level >= 3 ? "#ffa500" : "#2b2d31")
+    .setTitle("🚨 SECURITY LOG")
+    .setThumbnail(user?.displayAvatarURL?.({ dynamic: true }) || null)
+    .addFields(
+      {
+        name: "👤 User",
+        value: `${user?.tag || "Unknown"}\n\`${user?.id || "N/A"}\``,
+        inline: true
+      },
+      {
+        name: "⚡ Action",
+        value: action,
+        inline: true
+      },
+      {
+        name: "📌 Target",
+        value: target || "None",
+        inline: true
+      },
+      {
+        name: "⚠️ Threat",
+        value: `\`${level}\``,
+        inline: true
+      },
+      {
+        name: "🛡️ Status",
+        value:
+          level >= 6 ? "🔴 CRITICAL" :
+          level >= 3 ? "🟠 WARNING" :
+          "🟢 SAFE",
+        inline: true
+      }
+    )
+    .setFooter({ text: "Ultra Security System" })
+    .setTimestamp();
 }
 
 // =====================
-// SETUP COMMAND
+// LOG SENDER
+// =====================
+function sendLog(guild, type, embed, files = null) {
+  const ch = guild.channels.cache.get(config.logs[type]);
+  if (!ch) return;
+
+  if (files) ch.send({ embeds: [embed], files });
+  else ch.send({ embeds: [embed] });
+}
+
+// =====================
+// COMMANDS
 // =====================
 const commands = [
-  new SlashCommandBuilder()
-    .setName("setup")
-    .setDescription("Setup Wick Style Security System")
+  new SlashCommandBuilder().setName("setup").setDescription("Create full security system")
 ].map(c => c.toJSON());
 
 async function register() {
@@ -107,13 +135,15 @@ client.on("interactionCreate", async (i) => {
     const g = i.guild;
 
     const cat = await g.channels.create({
-      name: "🛡️ WICK SYSTEM",
+      name: "🛡️ SECURITY SYSTEM",
       type: ChannelType.GuildCategory
     });
 
+    const types = ["messages", "members", "channels", "security"];
+
     const logs = {};
 
-    for (const t of ["main", "messages", "members", "channels", "security"]) {
+    for (const t of types) {
       const ch = await g.channels.create({
         name: `log-${t}`,
         type: ChannelType.GuildText,
@@ -127,51 +157,60 @@ client.on("interactionCreate", async (i) => {
     saveConfig();
 
     return i.reply({
-      content: "🛡️ Wick System Activated",
+      content: "🛡️ System Activated",
       flags: MessageFlags.Ephemeral
     });
   }
 });
 
 // =====================
-// MESSAGE CACHE (SAVE BEFORE DELETE)
+// MESSAGE CACHE (FOR IMAGES)
 // =====================
 client.on("messageCreate", (m) => {
   if (!m.guild) return;
 
-  messageCache.set(m.id, {
+  cache.set(m.id, {
     content: m.content,
     files: [...m.attachments.values()].map(a => a.url),
-    author: m.author.tag
+    author: m.author
   });
 });
 
 // =====================
-// MESSAGE DELETE LOG
+// MESSAGE DELETE
 // =====================
 client.on("messageDelete", (m) => {
-  const data = messageCache.get(m.id);
+  const data = cache.get(m.id);
 
-  const embed = new EmbedBuilder()
-    .setTitle("🗑️ Message Deleted")
-    .setColor("Red")
-    .addFields(
-      { name: "User", value: data?.author || "Unknown" },
-      { name: "Content", value: data?.content || "No Content" }
-    )
-    .setTimestamp();
+  const embed = buildEmbed({
+    user: data?.author || m.author,
+    action: "Message Deleted",
+    target: m.channel.name,
+    level: 1
+  });
 
-  const ch = m.guild.channels.cache.get(config.logs?.messages);
-  if (ch) {
-    ch.send({ embeds: [embed] });
+  const files = data?.files?.length ? data.files : null;
 
-    if (data?.files?.length) {
-      ch.send({ files: data.files });
-    }
-  }
+  sendLog(m.guild, "messages", embed, files);
 
   addThreat(m.author?.id, 0.5);
-  messageCache.delete(m.id);
+  cache.delete(m.id);
+});
+
+// =====================
+// MESSAGE EDIT
+// =====================
+client.on("messageUpdate", (oldMsg, newMsg) => {
+  if (!oldMsg.guild) return;
+
+  const embed = buildEmbed({
+    user: oldMsg.author,
+    action: "Message Edited",
+    target: oldMsg.channel.name,
+    level: 1
+  });
+
+  sendLog(oldMsg.guild, "messages", embed);
 });
 
 // =====================
@@ -189,16 +228,19 @@ client.on("channelDelete", async (channel) => {
 
   const level = addThreat(user.id, 3);
 
-  const ch = channel.guild.channels.cache.get(config.logs?.security);
+  const embed = buildEmbed({
+    user,
+    action: "Channel Deleted",
+    target: channel.name,
+    level
+  });
 
-  if (ch) {
-    ch.send(`🚨 ${user.tag} deleted channel ${channel.name} | Threat: ${level}`);
+  sendLog(channel.guild, "security", embed);
+
+  if (member) {
+    if (level >= 3) member.timeout(60 * 1000);
+    if (level >= 6) member.ban({ reason: "Anti-Nuke System" });
   }
-
-  if (!member) return;
-
-  if (level >= 3) member.timeout(60 * 1000);
-  if (level >= 6) member.ban({ reason: "Wick Style Anti-Nuke" });
 
   if (level >= 6) {
     channel.guild.roles.everyone.setPermissions([]);
@@ -206,7 +248,7 @@ client.on("channelDelete", async (channel) => {
 });
 
 // =====================
-// MASS BAN DETECT
+// MASS BAN
 // =====================
 client.on("guildBanAdd", async (ban) => {
   const logs = await ban.guild.fetchAuditLogs({ type: 22, limit: 1 });
@@ -217,11 +259,14 @@ client.on("guildBanAdd", async (ban) => {
 
   const level = addThreat(user.id, 4);
 
-  const ch = ban.guild.channels.cache.get(config.logs?.security);
+  const embed = buildEmbed({
+    user,
+    action: "Mass Ban",
+    target: ban.user.tag,
+    level
+  });
 
-  if (ch) {
-    ch.send(`🚨 Mass Ban by ${user.tag} | Threat: ${level}`);
-  }
+  sendLog(ban.guild, "security", embed);
 
   if (level >= 6) {
     const member = await ban.guild.members.fetch(user.id).catch(() => null);
