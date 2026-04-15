@@ -1,44 +1,32 @@
 const { REST, Routes, SlashCommandBuilder } = require("discord.js");
 
-// =====================
-// 🔴 بياناتك جاهزة
-// =====================
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = "1493799788888719462";
 
-// =====================
-// 📌 الأوامر
-// =====================
+if (!TOKEN) {
+  console.log("❌ TOKEN not found in environment variables!");
+  process.exit(1);
+}
+
 const commands = [
-  new SlashCommandBuilder()
-    .setName("setup")
-    .setDescription("اختيار رتبة الأدمن"),
-
-  new SlashCommandBuilder()
-    .setName("setup-control")
-    .setDescription("اختيار روم الكنترول"),
-
-  new SlashCommandBuilder()
-    .setName("panel")
-    .setDescription("إرسال لوحة التحكم")
+  new SlashCommandBuilder().setName("setup").setDescription("اختيار رتبة الأدمن"),
+  new SlashCommandBuilder().setName("setup-control").setDescription("اختيار روم الكنترول"),
+  new SlashCommandBuilder().setName("panel").setDescription("إرسال لوحة التحكم")
 ].map(cmd => cmd.toJSON());
 
-// =====================
-// 🚀 تسجيل الأوامر
-// =====================
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 
 (async () => {
   try {
-    console.log("🔄 Registering slash commands...");
+    console.log("🔄 Registering commands...");
 
-    await rest.put(
+    const data = await rest.put(
       Routes.applicationCommands(CLIENT_ID),
       { body: commands }
     );
 
-    console.log("✅ Commands registered successfully!");
-  } catch (error) {
-    console.error("❌ Error:", error);
+    console.log(`✅ Registered ${data.length} commands`);
+  } catch (err) {
+    console.error("❌ Error:", err);
   }
 })();
