@@ -9,11 +9,20 @@ const {
   ChannelSelectMenuBuilder,
   ChannelType,
   PermissionsBitField,
-  StringSelectMenuBuilder
+  StringSelectMenuBuilder,
+  REST,
+  Routes,
+  SlashCommandBuilder
 } = require("discord.js");
 
 const fs = require("fs");
-const config = require("./config.json");
+
+// =====================
+// 🔐 ENV
+// =====================
+const TOKEN = process.env.TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
+const GUILD_ID = process.env.GUILD_ID;
 
 // =====================
 // 🤖 البوت
@@ -29,13 +38,19 @@ const client = new Client({
 });
 
 // =====================
-// 💾 حفظ الكونفق
+// 💾 config
 // =====================
+let config = {};
+try {
+  config = require("./config.json");
+} catch {
+  config = {};
+}
+
 function saveConfig() {
   fs.writeFileSync("./config.json", JSON.stringify(config, null, 2));
 }
 
-// تأكد من القيم
 if (!config.channels) config.channels = {};
 if (!config.channels.logs) config.channels.logs = {};
 
@@ -52,10 +67,37 @@ function isAdmin(member) {
 const renameMap = new Map();
 
 // =====================
-// 🚀 تشغيل
+// 🚀 تسجيل الأوامر تلقائي
 // =====================
-client.once("ready", () => {
+const commands = [
+  new SlashCommandBuilder().setName("setup").setDescription("تحديد رتبة الإدارة"),
+  new SlashCommandBuilder().setName("setup-control").setDescription("تحديد روم الكنترول"),
+  new SlashCommandBuilder().setName("panel").setDescription("إرسال لوحة التحكم")
+].map(cmd => cmd.toJSON());
+
+async function registerCommands() {
+  const rest = new REST({ version: "10" }).setToken(TOKEN);
+
+  try {
+    console.log("🚀 جاري تسجيل الأوامر...");
+
+    await rest.put(
+      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+      { body: commands }
+    );
+
+    console.log("✅ تم تسجيل الأوامر فورًا");
+  } catch (err) {
+    console.error("❌ خطأ في تسجيل الأوامر:", err);
+  }
+}
+
+// =====================
+// تشغيل
+// =====================
+client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
+  await registerCommands();
 });
 
 // =====================
@@ -64,12 +106,8 @@ client.once("ready", () => {
 client.on("interactionCreate", async (interaction) => {
   try {
 
-    // =====================
-    // 🧾 commands
-    // =====================
     if (interaction.isChatInputCommand()) {
 
-      // setup admin role
       if (interaction.commandName === "setup") {
         const roles = interaction.guild.roles.cache
           .filter(r => r.name !== "@everyone")
@@ -88,7 +126,6 @@ client.on("interactionCreate", async (interaction) => {
         });
       }
 
-      // setup control channel
       if (interaction.commandName === "setup-control") {
         if (!isAdmin(interaction.member))
           return interaction.reply({ content: "❌ ما عندك صلاحية", ephemeral: true });
@@ -104,7 +141,6 @@ client.on("interactionCreate", async (interaction) => {
         });
       }
 
-      // panel
       if (interaction.commandName === "panel") {
         if (!isAdmin(interaction.member))
           return interaction.reply({ content: "❌ ما عندك صلاحية", ephemeral: true });
@@ -132,9 +168,6 @@ client.on("interactionCreate", async (interaction) => {
       }
     }
 
-    // =====================
-    // select menu admin role
-    // =====================
     if (interaction.isStringSelectMenu()) {
       if (interaction.customId === "set_admin_role") {
         config.adminRole = interaction.values[0];
@@ -144,9 +177,6 @@ client.on("interactionCreate", async (interaction) => {
       }
     }
 
-    // =====================
-    // select menu channel
-    // =====================
     if (interaction.isChannelSelectMenu()) {
       if (interaction.customId === "set_control_channel") {
         config.channels.control = interaction.values[0];
@@ -156,9 +186,6 @@ client.on("interactionCreate", async (interaction) => {
       }
     }
 
-    // =====================
-    // buttons
-    // =====================
     if (interaction.isButton()) {
 
       if (!isAdmin(interaction.member))
@@ -166,7 +193,6 @@ client.on("interactionCreate", async (interaction) => {
 
       const channel = interaction.channel;
 
-      // create
       if (interaction.customId === "create") {
         await interaction.guild.channels.create({
           name: `room-${Date.now()}`,
@@ -177,12 +203,10 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.reply({ content: "✅ تم إنشاء روم", ephemeral: true });
       }
 
-      // delete
       if (interaction.customId === "delete") {
         await channel.delete().catch(() => {});
       }
 
-      // lock
       if (interaction.customId === "lock") {
         await channel.permissionOverwrites.edit(
           interaction.guild.roles.everyone,
@@ -192,7 +216,6 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.reply({ content: "🔒 تم القفل", ephemeral: true });
       }
 
-      // unlock
       if (interaction.customId === "unlock") {
         await channel.permissionOverwrites.edit(
           interaction.guild.roles.everyone,
@@ -202,7 +225,6 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.reply({ content: "🔓 تم الفتح", ephemeral: true });
       }
 
-      // rename
       if (interaction.customId === "rename") {
         renameMap.set(interaction.user.id, channel.id);
 
@@ -238,31 +260,10 @@ client.on("messageCreate", async (message) => {
 });
 
 // =====================
-// message delete log
+// 🔥 login
 // =====================
-client.on("messageDelete", async (message) => {
-  if (!message.guild) return;
+console.log("TOKEN:", TOKEN ? "OK" : "MISSING");
+console.log("CLIENT_ID:", CLIENT_ID ? "OK" : "MISSING");
+console.log("GUILD_ID:", GUILD_ID ? "OK" : "MISSING");
 
-  const log = message.guild.channels.cache.get(config.channels.logs.messageDelete);
-  if (!log) return;
-
-  log.send({
-    embeds: [
-      new EmbedBuilder()
-        .setTitle("🗑️ حذف رسالة")
-        .addFields(
-          { name: "العضو", value: message.author?.tag || "غير معروف" },
-          { name: "الروم", value: `${message.channel}` },
-          { name: "المحتوى", value: message.content || "مرفق" }
-        )
-        .setColor("Red")
-    ]
-  });
-});
-
-// =====================
-// 🔥 login (IMPORTANT FIX)
-// =====================
-console.log("TOKEN LOADED:", process.env.TOKEN ? "YES" : "NO");
-
-client.login(process.env.TOKEN);
+client.login(TOKEN);
