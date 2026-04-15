@@ -34,27 +34,31 @@ let config = {};
 try { config = require("./config.json"); } catch {}
 
 if (!config.logs) config.logs = {};
-if (!config.whitelist) config.whitelist = [];
 
-const threat = new Map();
-
-// =====================
-// SAVE
-// =====================
 function saveConfig() {
   fs.writeFileSync("./config.json", JSON.stringify(config, null, 2));
 }
 
 // =====================
-// CHECK
+// THREAT SYSTEM
 // =====================
-const isWhite = (id) => config.whitelist.includes(id);
+const threat = new Map();
+
+function addThreat(id, amount) {
+  threat.set(id, (threat.get(id) || 0) + amount);
+  return threat.get(id);
+}
+
+// =====================
+// MESSAGE CACHE (FOR IMAGES)
+// =====================
+const messageCache = new Map();
 
 // =====================
 // LOG SYSTEM
 // =====================
-function log(guild, title, desc, color = "#2b2d31") {
-  const ch = guild.channels.cache.get(config.logs.main);
+function sendLog(guild, title, desc, color = "#2b2d31") {
+  const ch = guild.channels.cache.get(config.logs?.main);
   if (!ch) return;
 
   ch.send({
@@ -69,10 +73,12 @@ function log(guild, title, desc, color = "#2b2d31") {
 }
 
 // =====================
-// COMMANDS
+// SETUP COMMAND
 // =====================
 const commands = [
-  new SlashCommandBuilder().setName("setup").setDescription("Setup System")
+  new SlashCommandBuilder()
+    .setName("setup")
+    .setDescription("Setup Wick Style Security System")
 ].map(c => c.toJSON());
 
 async function register() {
@@ -92,58 +98,84 @@ client.once("ready", async () => {
 });
 
 // =====================
-// SETUP (AUTO SYSTEM)
+// SETUP SYSTEM
 // =====================
-client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
+client.on("interactionCreate", async (i) => {
+  if (!i.isChatInputCommand()) return;
 
-  if (interaction.commandName === "setup") {
+  if (i.commandName === "setup") {
+    const g = i.guild;
 
-    const guild = interaction.guild;
-
-    const category = await guild.channels.create({
-      name: "🛡️ SECURITY SYSTEM",
+    const cat = await g.channels.create({
+      name: "🛡️ WICK SYSTEM",
       type: ChannelType.GuildCategory
     });
 
-    const main = await guild.channels.create({
-      name: "🚨-logs",
-      type: ChannelType.GuildText,
-      parent: category.id
-    });
+    const logs = {};
 
-    config.logs.main = main.id;
+    for (const t of ["main", "messages", "members", "channels", "security"]) {
+      const ch = await g.channels.create({
+        name: `log-${t}`,
+        type: ChannelType.GuildText,
+        parent: cat.id
+      });
+
+      logs[t] = ch.id;
+    }
+
+    config.logs = logs;
     saveConfig();
 
-    return interaction.reply({
-      content: "🛡️ System Activated",
+    return i.reply({
+      content: "🛡️ Wick System Activated",
       flags: MessageFlags.Ephemeral
     });
   }
 });
 
 // =====================
-// THREAT SYSTEM
+// MESSAGE CACHE (SAVE BEFORE DELETE)
 // =====================
-function addThreat(id, amount) {
-  threat.set(id, (threat.get(id) || 0) + amount);
-  return threat.get(id);
-}
+client.on("messageCreate", (m) => {
+  if (!m.guild) return;
 
-function punish(member, level) {
-  if (!member || isWhite(member.id)) return;
-
-  if (level >= 3) {
-    member.timeout(60 * 1000);
-  }
-
-  if (level >= 6) {
-    member.ban({ reason: "Ultra Security System" });
-  }
-}
+  messageCache.set(m.id, {
+    content: m.content,
+    files: [...m.attachments.values()].map(a => a.url),
+    author: m.author.tag
+  });
+});
 
 // =====================
-// CHANNEL DELETE (ANTI NUKE CORE)
+// MESSAGE DELETE LOG
+// =====================
+client.on("messageDelete", (m) => {
+  const data = messageCache.get(m.id);
+
+  const embed = new EmbedBuilder()
+    .setTitle("🗑️ Message Deleted")
+    .setColor("Red")
+    .addFields(
+      { name: "User", value: data?.author || "Unknown" },
+      { name: "Content", value: data?.content || "No Content" }
+    )
+    .setTimestamp();
+
+  const ch = m.guild.channels.cache.get(config.logs?.messages);
+  if (ch) {
+    ch.send({ embeds: [embed] });
+
+    if (data?.files?.length) {
+      ch.send({ files: data.files });
+    }
+  }
+
+  addThreat(m.author?.id, 0.5);
+  messageCache.delete(m.id);
+});
+
+// =====================
+// CHANNEL DELETE (ANTI NUKE)
 // =====================
 client.on("channelDelete", async (channel) => {
   if (!channel.guild) return;
@@ -157,33 +189,20 @@ client.on("channelDelete", async (channel) => {
 
   const level = addThreat(user.id, 3);
 
-  log(channel.guild,
-    "🗑️ Channel Deleted",
-    `${user.tag} deleted ${channel.name}\nThreat: ${level}`,
-    "Red"
-  );
+  const ch = channel.guild.channels.cache.get(config.logs?.security);
 
-  punish(member, level);
+  if (ch) {
+    ch.send(`🚨 ${user.tag} deleted channel ${channel.name} | Threat: ${level}`);
+  }
+
+  if (!member) return;
+
+  if (level >= 3) member.timeout(60 * 1000);
+  if (level >= 6) member.ban({ reason: "Wick Style Anti-Nuke" });
 
   if (level >= 6) {
     channel.guild.roles.everyone.setPermissions([]);
-    log(channel.guild, "🚨 LOCKDOWN", "Server locked due to attack", "DarkRed");
   }
-});
-
-// =====================
-// MESSAGE DELETE
-// =====================
-client.on("messageDelete", (message) => {
-  if (!message.guild) return;
-
-  log(
-    message.guild,
-    "🗑️ Message Deleted",
-    `${message.author?.tag || "Unknown"}\n${message.content || "No Content"}`
-  );
-
-  addThreat(message.author?.id, 0.5);
 });
 
 // =====================
@@ -195,17 +214,19 @@ client.on("guildBanAdd", async (ban) => {
   if (!entry) return;
 
   const user = entry.executor;
-  const member = await ban.guild.members.fetch(user.id).catch(() => null);
 
   const level = addThreat(user.id, 4);
 
-  log(ban.guild,
-    "🚨 Mass Ban",
-    `${user.tag} banned a user\nThreat: ${level}`,
-    "Orange"
-  );
+  const ch = ban.guild.channels.cache.get(config.logs?.security);
 
-  punish(member, level);
+  if (ch) {
+    ch.send(`🚨 Mass Ban by ${user.tag} | Threat: ${level}`);
+  }
+
+  if (level >= 6) {
+    const member = await ban.guild.members.fetch(user.id).catch(() => null);
+    if (member) member.ban({ reason: "Mass Ban Protection" });
+  }
 });
 
 // =====================
