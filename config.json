@@ -1,0 +1,11 @@
+{
+  "adminRole": null,
+  "channels": {
+    "control": null,
+    "logs": {
+      "messageDelete": null,
+      "messageEdit": null,
+      "joinLeave": null
+    }
+  }
+}
