@@ -35,7 +35,7 @@ let config = {};
 try { config = require("./config.json"); } catch {}
 
 if (!config.logs) config.logs = {};
-if (!config.allowedRoles) config.allowedRoles = {}; // ✅ ADD
+if (!config.allowedRoles) config.allowedRoles = {};
 
 function saveConfig() {
   fs.writeFileSync("./config.json", JSON.stringify(config, null, 2));
@@ -47,7 +47,7 @@ function saveConfig() {
 const whitelist = ["YOUR_ID_HERE"];
 
 // =====================
-// THREAT SYSTEM (SMART)
+// THREAT SYSTEM
 // =====================
 const threatData = new Map();
 
@@ -63,23 +63,6 @@ function addThreat(id, amount) {
 
   threatData.set(id, data);
   return data.points;
-}
-
-// =====================
-// ACTION TRACK (ANTI NUKE)
-// =====================
-const actionTrack = new Map();
-
-function trackAction(id) {
-  const now = Date.now();
-  const data = actionTrack.get(id) || [];
-
-  const filtered = data.filter(t => now - t < 5000);
-  filtered.push(now);
-
-  actionTrack.set(id, filtered);
-
-  return filtered.length;
 }
 
 // =====================
@@ -110,46 +93,30 @@ function wickLog({
 }
 
 // =====================
-// SEND LOG (UPDATED WITH ROLE FILTER)
+// SEND LOG (FIXED LOGIC)
 // =====================
 function sendLog(guild, type, embed) {
-  const ch = guild.channels.cache.get(config.logs[type]);
-  if (!ch) return;
+  const channel = guild.channels.cache.get(config.logs[type]);
+  if (!channel) return;
 
-  const allowed = config.allowedRoles[type];
+  const allowedRoles = config.allowedRoles[type];
 
-  if (!allowed || !allowed.length) {
-    return ch.send({ embeds: [embed] });
+  // لو ما فيه تحديد → عادي يرسل للروم
+  if (!allowedRoles || !allowedRoles.length) {
+    return channel.send({ embeds: [embed] });
   }
 
-  return ch.send({ embeds: [embed] });
-}
+  // نجيب الأعضاء اللي عندهم الرتب المختارة
+  const membersToNotify = channel.guild.members.cache.filter(member =>
+    member.roles.cache.some(r => allowedRoles.includes(r.id))
+  );
 
-// =====================
-// PUNISH SYSTEM
-// =====================
-async function punish(member, level, reason) {
-  if (!member) return;
+  const mentions = membersToNotify.map(m => `<@${m.id}>`).join(" ");
 
-  if (level >= 10) await member.ban({ reason }).catch(() => {});
-  else if (level >= 7) await member.kick(reason).catch(() => {});
-  else if (level >= 4) await member.timeout(5 * 60 * 1000).catch(() => {});
-}
-
-// =====================
-// LOCKDOWN
-// =====================
-async function checkLockdown(guild, level) {
-  if (level < 12) return;
-
-  await guild.roles.everyone.setPermissions([]);
-
-  const embed = new EmbedBuilder()
-    .setColor("#FF0000")
-    .setTitle("🚨 LOCKDOWN")
-    .setDescription("تم قفل السيرفر بسبب هجوم");
-
-  sendLog(guild, "security", embed);
+  return channel.send({
+    content: mentions || null,
+    embeds: [embed]
+  });
 }
 
 // =====================
@@ -162,7 +129,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("logroles")
-    .setDescription("تحديد الرتب اللي تشوف اللوقات")
+    .setDescription("تحديد الرتب اللي تستلم تنبيه اللوقات")
     .addStringOption(o =>
       o.setName("type")
         .setDescription("نوع اللوق")
@@ -182,8 +149,11 @@ const commands = [
     )
 ].map(c => c.toJSON());
 
+// =====================
+// REGISTER
+// =====================
 async function register() {
-  const rest = new REST({ version: 10 }).setToken(TOKEN);
+  const rest = new REST({ version: "10" }).setToken(TOKEN);
   await rest.put(
     Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
     { body: commands }
@@ -196,7 +166,7 @@ client.once("ready", async () => {
 });
 
 // =====================
-// SETUP SYSTEM
+// SETUP + LOGROLES
 // =====================
 client.on("interactionCreate", async (i) => {
   if (!i.isChatInputCommand()) return;
@@ -256,7 +226,7 @@ client.on("interactionCreate", async (i) => {
 
     const menu = new StringSelectMenuBuilder()
       .setCustomId(`logroles_${type}`)
-      .setPlaceholder("اختار الرتب اللي تشوف اللوق")
+      .setPlaceholder("اختار الرتب اللي تستلم تنبيه اللوق")
       .setMinValues(0)
       .setMaxValues(roles.length)
       .addOptions(roles);
@@ -264,7 +234,7 @@ client.on("interactionCreate", async (i) => {
     const row = new ActionRowBuilder().addComponents(menu);
 
     return i.reply({
-      content: `🎛️ اختر الرتب للوق: **${type}**`,
+      content: `🎛️ اختر الرتب لتنبيه لوق: **${type}**`,
       components: [row],
       ephemeral: true
     });
@@ -272,7 +242,7 @@ client.on("interactionCreate", async (i) => {
 });
 
 // =====================
-// SELECT MENU HANDLER
+// SELECT MENU SAVE
 // =====================
 client.on("interactionCreate", async (i) => {
   if (!i.isStringSelectMenu()) return;
@@ -284,7 +254,7 @@ client.on("interactionCreate", async (i) => {
   saveConfig();
 
   return i.update({
-    content: `✅ تم تحديد الرتب للوق **${type}**`,
+    content: `✅ تم تحديد الرتب لتنبيه لوق **${type}**`,
     components: []
   });
 });
