@@ -1,5 +1,3 @@
-require("dotenv").config();
-
 const {
   Client,
   GatewayIntentBits,
@@ -34,7 +32,7 @@ function saveConfig() {
   fs.writeFileSync("./config.json", JSON.stringify(config, null, 2));
 }
 
-// تأكد من وجود القيم
+// تأكد من القيم
 if (!config.channels) config.channels = {};
 if (!config.channels.logs) config.channels.logs = {};
 
@@ -62,12 +60,9 @@ client.once("ready", () => {
 // =====================
 client.on("interactionCreate", async (interaction) => {
 
-  // =====================
-  // 🧾 أوامر
-  // =====================
+  // ===== أوامر =====
   if (interaction.isChatInputCommand()) {
 
-    // setup
     if (interaction.commandName === "setup") {
       const roles = interaction.guild.roles.cache
         .filter(r => r.name !== "@everyone")
@@ -86,7 +81,6 @@ client.on("interactionCreate", async (interaction) => {
       });
     }
 
-    // setup-control
     if (interaction.commandName === "setup-control") {
       if (!isAdmin(interaction.member))
         return interaction.reply({ content: "❌ ممنوع", ephemeral: true });
@@ -102,7 +96,6 @@ client.on("interactionCreate", async (interaction) => {
       });
     }
 
-    // panel
     if (interaction.commandName === "panel") {
       if (!isAdmin(interaction.member))
         return interaction.reply({ content: "❌ ممنوع", ephemeral: true });
@@ -130,9 +123,7 @@ client.on("interactionCreate", async (interaction) => {
     }
   }
 
-  // =====================
-  // 📜 Select Menu (رتبة)
-  // =====================
+  // ===== اختيار رتبة =====
   if (interaction.isStringSelectMenu()) {
     if (interaction.customId === "set_admin_role") {
       config.adminRole = interaction.values[0];
@@ -145,9 +136,7 @@ client.on("interactionCreate", async (interaction) => {
     }
   }
 
-  // =====================
-  // 📂 Select Menu (روم)
-  // =====================
+  // ===== اختيار روم =====
   if (interaction.isChannelSelectMenu()) {
     if (interaction.customId === "set_control_channel") {
       config.channels.control = interaction.values[0];
@@ -160,9 +149,7 @@ client.on("interactionCreate", async (interaction) => {
     }
   }
 
-  // =====================
-  // 🔘 الأزرار
-  // =====================
+  // ===== الأزرار =====
   if (interaction.isButton()) {
 
     if (!isAdmin(interaction.member))
@@ -170,7 +157,6 @@ client.on("interactionCreate", async (interaction) => {
 
     const channel = interaction.channel;
 
-    // إنشاء
     if (interaction.customId === "create") {
       await interaction.guild.channels.create({
         name: `room-${Date.now()}`,
@@ -181,12 +167,10 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.reply({ content: "✅ تم الإنشاء", ephemeral: true });
     }
 
-    // حذف
     if (interaction.customId === "delete") {
       await channel.delete().catch(() => {});
     }
 
-    // قفل
     if (interaction.customId === "lock") {
       await channel.permissionOverwrites.edit(
         interaction.guild.roles.everyone,
@@ -198,7 +182,6 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.reply({ content: "🔒 تم القفل", ephemeral: true });
     }
 
-    // فتح
     if (interaction.customId === "unlock") {
       await channel.permissionOverwrites.edit(
         interaction.guild.roles.everyone,
@@ -210,7 +193,6 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.reply({ content: "🔓 تم الفتح", ephemeral: true });
     }
 
-    // إعادة تسمية
     if (interaction.customId === "rename") {
       renameMap.set(interaction.user.id, channel.id);
 
@@ -223,7 +205,7 @@ client.on("interactionCreate", async (interaction) => {
 });
 
 // =====================
-// ✏️ استقبال اسم جديد
+// ✏️ تغيير الاسم
 // =====================
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
@@ -242,7 +224,7 @@ client.on("messageCreate", async (message) => {
 });
 
 // =====================
-// 🗑️ لوق حذف الرسائل
+// 🗑️ لوق حذف
 // =====================
 client.on("messageDelete", async (message) => {
   if (!message.guild) return;
@@ -265,4 +247,6 @@ client.on("messageDelete", async (message) => {
 });
 
 // =====================
-client.login(process.env.TOKEN);
+// 🔐 حط التوكن هنا
+// =====================
+client.login("PUT_YOUR_TOKEN_HERE");
