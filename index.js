@@ -42,78 +42,25 @@ function saveConfig() {
 }
 
 // =====================
-// WHITELIST
-// =====================
-const whitelist = ["YOUR_ID_HERE"];
-
-// =====================
-// THREAT SYSTEM
-// =====================
-const threatData = new Map();
-
-function addThreat(id, amount) {
-  const now = Date.now();
-  const data = threatData.get(id) || { points: 0, last: now };
-
-  const diff = (now - data.last) / 1000;
-  data.points = Math.max(0, data.points - diff * 0.05);
-
-  data.points += amount;
-  data.last = now;
-
-  threatData.set(id, data);
-  return data.points;
-}
-
-// =====================
-// EMBED
-// =====================
-function wickLog({
-  type,
-  userName,
-  userId,
-  action,
-  targetName,
-  targetId,
-  room,
-  extra = [],
-  color
-}) {
-  return new EmbedBuilder()
-    .setColor(color || "#2f3136")
-    .setTitle(`📌 Log • ${type}`)
-    .addFields(
-      { name: "👤 المستخدم", value: `${userName}\n(${userId})` },
-      { name: "⚡ الحدث", value: action },
-      { name: "🎯 المستهدف", value: `${targetName}\n(${targetId})` },
-      { name: "🏷️ الروم", value: room, inline: true },
-      { name: "📊 إضافي", value: extra.length ? extra.join("\n") : "لا يوجد" }
-    )
-    .setTimestamp();
-}
-
-// =====================
-// SEND LOG (FIXED LOGIC)
+// SEND LOG (ROLE FILTER FIXED)
 // =====================
 function sendLog(guild, type, embed) {
-  const channel = guild.channels.cache.get(config.logs[type]);
-  if (!channel) return;
+  const ch = guild.channels.cache.get(config.logs[type]);
+  if (!ch) return;
 
-  const allowedRoles = config.allowedRoles[type];
+  const allowed = config.allowedRoles[type];
 
-  // لو ما فيه تحديد → عادي يرسل للروم
-  if (!allowedRoles || !allowedRoles.length) {
-    return channel.send({ embeds: [embed] });
+  if (!allowed || !allowed.length) {
+    return ch.send({ embeds: [embed] });
   }
 
-  // نجيب الأعضاء اللي عندهم الرتب المختارة
-  const membersToNotify = channel.guild.members.cache.filter(member =>
-    member.roles.cache.some(r => allowedRoles.includes(r.id))
+  const membersToNotify = ch.guild.members.cache.filter(member =>
+    member.roles.cache.some(r => allowed.includes(r.id))
   );
 
   const mentions = membersToNotify.map(m => `<@${m.id}>`).join(" ");
 
-  return channel.send({
+  return ch.send({
     content: mentions || null,
     embeds: [embed]
   });
@@ -160,19 +107,23 @@ async function register() {
   );
 }
 
-client.once("ready", async () => {
+client.once("clientReady", async () => {
   console.log(`Logged in as ${client.user.tag}`);
   await register();
 });
 
 // =====================
-// SETUP + LOGROLES
+// INTERACTIONS
 // =====================
 client.on("interactionCreate", async (i) => {
   if (!i.isChatInputCommand()) return;
 
-  // SETUP
+  // =====================
+  // SETUP FIXED
+  // =====================
   if (i.commandName === "setup") {
+    await i.deferReply({ flags: MessageFlags.Ephemeral });
+
     const g = i.guild;
 
     const cat = await g.channels.create({
@@ -206,13 +157,14 @@ client.on("interactionCreate", async (i) => {
     config.logs = logs;
     saveConfig();
 
-    return i.reply({
-      content: "✅ System Ready",
-      flags: MessageFlags.Ephemeral
+    return i.editReply({
+      content: "✅ System Ready"
     });
   }
 
-  // LOGROLES
+  // =====================
+  // LOG ROLES MENU
+  // =====================
   if (i.commandName === "logroles") {
     const type = i.options.getString("type");
 
@@ -226,7 +178,7 @@ client.on("interactionCreate", async (i) => {
 
     const menu = new StringSelectMenuBuilder()
       .setCustomId(`logroles_${type}`)
-      .setPlaceholder("اختار الرتب اللي تستلم تنبيه اللوق")
+      .setPlaceholder("اختار الرتب")
       .setMinValues(0)
       .setMaxValues(roles.length)
       .addOptions(roles);
@@ -234,7 +186,7 @@ client.on("interactionCreate", async (i) => {
     const row = new ActionRowBuilder().addComponents(menu);
 
     return i.reply({
-      content: `🎛️ اختر الرتب لتنبيه لوق: **${type}**`,
+      content: `🎛️ اختر الرتب لتنبيه: **${type}**`,
       components: [row],
       ephemeral: true
     });
@@ -254,7 +206,7 @@ client.on("interactionCreate", async (i) => {
   saveConfig();
 
   return i.update({
-    content: `✅ تم تحديد الرتب لتنبيه لوق **${type}**`,
+    content: `✅ تم حفظ الرتب للوق **${type}**`,
     components: []
   });
 });
