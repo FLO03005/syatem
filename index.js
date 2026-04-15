@@ -4,8 +4,6 @@ const {
   Partials,
   EmbedBuilder,
   ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
   ChannelSelectMenuBuilder,
   ChannelType,
   PermissionsBitField,
@@ -63,34 +61,22 @@ function isAdmin(member) {
 }
 
 // =====================
-// ✏️ rename system
-// =====================
-const renameMap = new Map();
-
-// =====================
 // 🚀 تسجيل الأوامر
 // =====================
 const commands = [
   new SlashCommandBuilder().setName("setup").setDescription("تحديد رتبة الإدارة"),
-  new SlashCommandBuilder().setName("setup-control").setDescription("تحديد روم الكنترول"),
-  new SlashCommandBuilder().setName("panel").setDescription("إرسال لوحة التحكم")
+  new SlashCommandBuilder().setName("set-logs").setDescription("تحديد روم اللوق")
 ].map(cmd => cmd.toJSON());
 
 async function registerCommands() {
   const rest = new REST({ version: "10" }).setToken(TOKEN);
 
-  try {
-    console.log("🚀 تسجيل الأوامر...");
+  await rest.put(
+    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+    { body: commands }
+  );
 
-    await rest.put(
-      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-      { body: commands }
-    );
-
-    console.log("✅ تم تسجيل الأوامر");
-  } catch (err) {
-    console.error(err);
-  }
+  console.log("✅ تم تسجيل الأوامر");
 }
 
 // =====================
@@ -109,6 +95,7 @@ client.on("interactionCreate", async (interaction) => {
 
     if (interaction.isChatInputCommand()) {
 
+      // setup admin role
       if (interaction.commandName === "setup") {
         const roles = interaction.guild.roles.cache
           .filter(r => r.name !== "@everyone")
@@ -127,7 +114,8 @@ client.on("interactionCreate", async (interaction) => {
         });
       }
 
-      if (interaction.commandName === "setup-control") {
+      // set logs
+      if (interaction.commandName === "set-logs") {
         if (!isAdmin(interaction.member))
           return interaction.reply({
             content: "❌ ما عندك صلاحية",
@@ -135,52 +123,18 @@ client.on("interactionCreate", async (interaction) => {
           });
 
         const menu = new ChannelSelectMenuBuilder()
-          .setCustomId("set_control_channel")
+          .setCustomId("set_logs_channel")
           .setChannelTypes([ChannelType.GuildText]);
 
         return interaction.reply({
-          content: "🎛️ اختر روم الكنترول",
+          content: "📁 اختر روم اللوق",
           components: [new ActionRowBuilder().addComponents(menu)],
-          flags: MessageFlags.Ephemeral
-        });
-      }
-
-      if (interaction.commandName === "panel") {
-        if (!isAdmin(interaction.member))
-          return interaction.reply({
-            content: "❌ ما عندك صلاحية",
-            flags: MessageFlags.Ephemeral
-          });
-
-        const channel = interaction.guild.channels.cache.get(config.channels.control);
-
-        if (!channel)
-          return interaction.reply({
-            content: "❌ حدد روم الكنترول أول",
-            flags: MessageFlags.Ephemeral
-          });
-
-        const embed = new EmbedBuilder()
-          .setTitle("🎛️ Control Panel")
-          .setColor("Blue");
-
-        const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId("create").setLabel("🏗️ إنشاء روم").setStyle(ButtonStyle.Success),
-          new ButtonBuilder().setCustomId("delete").setLabel("🗑️ حذف روم").setStyle(ButtonStyle.Danger),
-          new ButtonBuilder().setCustomId("rename").setLabel("✏️ تعديل اسم").setStyle(ButtonStyle.Primary),
-          new ButtonBuilder().setCustomId("lock").setLabel("🔒 قفل").setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder().setCustomId("unlock").setLabel("🔓 فتح").setStyle(ButtonStyle.Secondary)
-        );
-
-        await channel.send({ embeds: [embed], components: [row] });
-
-        return interaction.reply({
-          content: "✅ تم إرسال اللوحة",
           flags: MessageFlags.Ephemeral
         });
       }
     }
 
+    // select admin role
     if (interaction.isStringSelectMenu()) {
       if (interaction.customId === "set_admin_role") {
         config.adminRole = interaction.values[0];
@@ -193,74 +147,14 @@ client.on("interactionCreate", async (interaction) => {
       }
     }
 
+    // select logs channel
     if (interaction.isChannelSelectMenu()) {
-      if (interaction.customId === "set_control_channel") {
-        config.channels.control = interaction.values[0];
+      if (interaction.customId === "set_logs_channel") {
+        config.channels.logs.all = interaction.values[0];
         saveConfig();
 
         return interaction.reply({
-          content: "✅ تم حفظ روم الكنترول",
-          flags: MessageFlags.Ephemeral
-        });
-      }
-    }
-
-    if (interaction.isButton()) {
-
-      if (!isAdmin(interaction.member))
-        return interaction.reply({
-          content: "❌ ما عندك صلاحية",
-          flags: MessageFlags.Ephemeral
-        });
-
-      const channel = interaction.channel;
-
-      if (interaction.customId === "create") {
-        await interaction.guild.channels.create({
-          name: `room-${Date.now()}`,
-          type: ChannelType.GuildText,
-          parent: channel.parent
-        });
-
-        return interaction.reply({
-          content: "✅ تم إنشاء روم",
-          flags: MessageFlags.Ephemeral
-        });
-      }
-
-      if (interaction.customId === "delete") {
-        await channel.delete().catch(() => {});
-      }
-
-      if (interaction.customId === "lock") {
-        await channel.permissionOverwrites.edit(
-          interaction.guild.roles.everyone,
-          { [PermissionsBitField.Flags.SendMessages]: false }
-        );
-
-        return interaction.reply({
-          content: "🔒 تم القفل",
-          flags: MessageFlags.Ephemeral
-        });
-      }
-
-      if (interaction.customId === "unlock") {
-        await channel.permissionOverwrites.edit(
-          interaction.guild.roles.everyone,
-          { [PermissionsBitField.Flags.SendMessages]: true }
-        );
-
-        return interaction.reply({
-          content: "🔓 تم الفتح",
-          flags: MessageFlags.Ephemeral
-        });
-      }
-
-      if (interaction.customId === "rename") {
-        renameMap.set(interaction.user.id, channel.id);
-
-        return interaction.reply({
-          content: "✏️ اكتب الاسم الجديد",
+          content: "✅ تم تحديد روم اللوق",
           flags: MessageFlags.Ephemeral
         });
       }
@@ -272,22 +166,89 @@ client.on("interactionCreate", async (interaction) => {
 });
 
 // =====================
-// rename message
+// 🗑️ حذف رسالة
 // =====================
-client.on("messageCreate", async (message) => {
-  if (message.author.bot) return;
+client.on("messageDelete", async (message) => {
+  if (!message.guild) return;
 
-  if (!renameMap.has(message.author.id)) return;
+  const log = message.guild.channels.cache.get(config.channels.logs.all);
+  if (!log) return;
 
-  const channelId = renameMap.get(message.author.id);
-  const channel = message.guild.channels.cache.get(channelId);
+  log.send({
+    embeds: [
+      new EmbedBuilder()
+        .setTitle("🗑️ حذف رسالة")
+        .addFields(
+          { name: "العضو", value: message.author?.tag || "غير معروف" },
+          { name: "الروم", value: `${message.channel}` },
+          { name: "المحتوى", value: message.content || "مرفق" }
+        )
+        .setColor("Red")
+    ]
+  });
+});
 
-  if (!channel) return;
+// =====================
+// ✏️ تعديل رسالة
+// =====================
+client.on("messageUpdate", async (oldMsg, newMsg) => {
+  if (!oldMsg.guild) return;
+  if (oldMsg.content === newMsg.content) return;
 
-  await channel.setName(message.content);
-  renameMap.delete(message.author.id);
+  const log = oldMsg.guild.channels.cache.get(config.channels.logs.all);
+  if (!log) return;
 
-  message.reply("✅ تم تغيير الاسم");
+  log.send({
+    embeds: [
+      new EmbedBuilder()
+        .setTitle("✏️ تعديل رسالة")
+        .addFields(
+          { name: "قبل", value: oldMsg.content || "—" },
+          { name: "بعد", value: newMsg.content || "—" }
+        )
+        .setColor("Yellow")
+    ]
+  });
+});
+
+// =====================
+// 👤 دخول عضو
+// =====================
+client.on("guildMemberAdd", (member) => {
+  const log = member.guild.channels.cache.get(config.channels.logs.all);
+  if (!log) return;
+
+  log.send(`📥 دخول عضو: ${member.user.tag}`);
+});
+
+// =====================
+// 🚪 خروج عضو
+// =====================
+client.on("guildMemberRemove", (member) => {
+  const log = member.guild.channels.cache.get(config.channels.logs.all);
+  if (!log) return;
+
+  log.send(`📤 خروج عضو: ${member.user.tag}`);
+});
+
+// =====================
+// 📁 إنشاء روم
+// =====================
+client.on("channelCreate", (channel) => {
+  const log = channel.guild.channels.cache.get(config.channels.logs.all);
+  if (!log) return;
+
+  log.send(`📁 تم إنشاء روم: ${channel.name}`);
+});
+
+// =====================
+// 🗑️ حذف روم
+// =====================
+client.on("channelDelete", (channel) => {
+  const log = channel.guild.channels.cache.get(config.channels.logs.all);
+  if (!log) return;
+
+  log.send(`🗑️ تم حذف روم: ${channel.name}`);
 });
 
 // =====================
