@@ -7,9 +7,7 @@ const {
   REST,
   Routes,
   SlashCommandBuilder,
-  MessageFlags,
-  ActionRowBuilder,
-  StringSelectMenuBuilder
+  MessageFlags
 } = require("discord.js");
 
 const fs = require("fs");
@@ -33,72 +31,125 @@ const client = new Client({
 
 let config = {};
 try { config = require("./config.json"); } catch {}
-
 if (!config.logs) config.logs = {};
-if (!config.allowedRoles) config.allowedRoles = {};
 
 function saveConfig() {
   fs.writeFileSync("./config.json", JSON.stringify(config, null, 2));
 }
 
 // =====================
-// SEND LOG (ROLE FILTER FIXED)
+// WHITELIST
+// =====================
+const whitelist = ["YOUR_ID_HERE"];
+
+// =====================
+// THREAT SYSTEM (SMART)
+// =====================
+const threatData = new Map();
+
+function addThreat(id, amount) {
+  const now = Date.now();
+  const data = threatData.get(id) || { points: 0, last: now };
+
+  const diff = (now - data.last) / 1000;
+  data.points = Math.max(0, data.points - diff * 0.05);
+
+  data.points += amount;
+  data.last = now;
+
+  threatData.set(id, data);
+  return data.points;
+}
+
+// =====================
+// ACTION TRACK (ANTI NUKE)
+// =====================
+const actionTrack = new Map();
+
+function trackAction(id) {
+  const now = Date.now();
+  const data = actionTrack.get(id) || [];
+
+  const filtered = data.filter(t => now - t < 5000);
+  filtered.push(now);
+
+  actionTrack.set(id, filtered);
+
+  return filtered.length;
+}
+
+// =====================
+// EMBED
+// =====================
+function wickLog({
+  type,
+  userName,
+  userId,
+  action,
+  targetName,
+  targetId,
+  room,
+  extra = [],
+  color
+}) {
+  return new EmbedBuilder()
+    .setColor(color || "#2f3136")
+    .setTitle(`📌 Log • ${type}`)
+    .addFields(
+      { name: "👤 المستخدم", value: `${userName}\n(${userId})` },
+      { name: "⚡ الحدث", value: action },
+      { name: "🎯 المستهدف", value: `${targetName}\n(${targetId})` },
+      { name: "🏷️ الروم", value: room, inline: true },
+      { name: "📊 إضافي", value: extra.length ? extra.join("\n") : "لا يوجد" }
+    )
+    .setTimestamp();
+}
+
+// =====================
+// SEND LOG
 // =====================
 function sendLog(guild, type, embed) {
   const ch = guild.channels.cache.get(config.logs[type]);
   if (!ch) return;
-
-  const allowed = config.allowedRoles[type];
-
-  if (!allowed || !allowed.length) {
-    return ch.send({ embeds: [embed] });
-  }
-
-  const membersToNotify = ch.guild.members.cache.filter(member =>
-    member.roles.cache.some(r => allowed.includes(r.id))
-  );
-
-  const mentions = membersToNotify.map(m => `<@${m.id}>`).join(" ");
-
-  return ch.send({
-    content: mentions || null,
-    embeds: [embed]
-  });
+  ch.send({ embeds: [embed] });
 }
 
 // =====================
-// COMMANDS
+// PUNISH SYSTEM
+// =====================
+async function punish(member, level, reason) {
+  if (!member) return;
+
+  if (level >= 10) await member.ban({ reason }).catch(() => {});
+  else if (level >= 7) await member.kick(reason).catch(() => {});
+  else if (level >= 4) await member.timeout(5 * 60 * 1000).catch(() => {});
+}
+
+// =====================
+// LOCKDOWN
+// =====================
+async function checkLockdown(guild, level) {
+  if (level < 12) return;
+
+  await guild.roles.everyone.setPermissions([]);
+
+  const embed = new EmbedBuilder()
+    .setColor("#FF0000")
+    .setTitle("🚨 LOCKDOWN")
+    .setDescription("تم قفل السيرفر بسبب هجوم");
+
+  sendLog(guild, "security", embed);
+}
+
+// =====================
+// SETUP COMMAND
 // =====================
 const commands = [
   new SlashCommandBuilder()
     .setName("setup")
-    .setDescription("Create System"),
-
-  new SlashCommandBuilder()
-    .setName("logroles")
-    .setDescription("تحديد الرتب اللي تستلم تنبيه اللوقات")
-    .addStringOption(o =>
-      o.setName("type")
-        .setDescription("نوع اللوق")
-        .setRequired(true)
-        .addChoices(
-          { name: "messages", value: "messages" },
-          { name: "members", value: "members" },
-          { name: "channels", value: "channels" },
-          { name: "security", value: "security" },
-          { name: "roles-add", value: "roles-add" },
-          { name: "roles-remove", value: "roles-remove" },
-          { name: "roles-delete", value: "roles-delete" },
-          { name: "timeout", value: "timeout" },
-          { name: "kick", value: "kick" },
-          { name: "ban", value: "ban" }
-        )
-    )
+    .setDescription("Create System")
 ].map(c => c.toJSON());
 
-// =====================
-// REGISTER
-// =====================
 async function register() {
   const rest = new REST({ version: "10" }).setToken(TOKEN);
   await rest.put(
@@ -107,23 +158,18 @@ async function register() {
   );
 }
 
-client.once("clientReady", async () => {
+client.once("ready", async () => {
   console.log(`Logged in as ${client.user.tag}`);
   await register();
 });
 
 // =====================
-// INTERACTIONS
+// SETUP CHANNELS
 // =====================
 client.on("interactionCreate", async (i) => {
   if (!i.isChatInputCommand()) return;
 
-  // =====================
-  // SETUP FIXED
-  // =====================
   if (i.commandName === "setup") {
-    await i.deferReply({ flags: MessageFlags.Ephemeral });
-
     const g = i.guild;
 
     const cat = await g.channels.create({
@@ -157,58 +203,211 @@ client.on("interactionCreate", async (i) => {
     config.logs = logs;
     saveConfig();
 
-    return i.editReply({
-      content: "✅ System Ready"
-    });
-  }
-
-  // =====================
-  // LOG ROLES MENU
-  // =====================
-  if (i.commandName === "logroles") {
-    const type = i.options.getString("type");
-
-    const roles = i.guild.roles.cache
-      .filter(r => r.id !== i.guild.id)
-      .map(r => ({
-        label: r.name.slice(0, 25),
-        value: r.id
-      }))
-      .slice(0, 25);
-
-    const menu = new StringSelectMenuBuilder()
-      .setCustomId(`logroles_${type}`)
-      .setPlaceholder("اختار الرتب")
-      .setMinValues(0)
-      .setMaxValues(roles.length)
-      .addOptions(roles);
-
-    const row = new ActionRowBuilder().addComponents(menu);
-
     return i.reply({
-      content: `🎛️ اختر الرتب لتنبيه: **${type}**`,
-      components: [row],
-      ephemeral: true
+      content: "✅ System Ready",
+      flags: MessageFlags.Ephemeral
     });
   }
 });
 
 // =====================
-// SELECT MENU SAVE
+// MESSAGE CACHE
 // =====================
-client.on("interactionCreate", async (i) => {
-  if (!i.isStringSelectMenu()) return;
-  if (!i.customId.startsWith("logroles_")) return;
+const cache = new Map();
 
-  const type = i.customId.split("_")[1];
+client.on("messageCreate", (m) => {
+  if (!m.guild) return;
 
-  config.allowedRoles[type] = i.values;
-  saveConfig();
-
-  return i.update({
-    content: `✅ تم حفظ الرتب للوق **${type}**`,
-    components: []
+  cache.set(m.id, {
+    content: m.content,
+    files: [...m.attachments.values()].map(a => a.url),
+    author: m.author
   });
+});
+
+// =====================
+// MESSAGE DELETE
+// =====================
+client.on("messageDelete", (m) => {
+  const data = cache.get(m.id);
+
+  sendLog(m.guild, "messages",
+    wickLog({
+      type: "Messages",
+      userName: data?.author?.tag || m.author?.tag,
+      userId: data?.author?.id || m.author?.id,
+      action: "حذف رسالة",
+      targetName: m.channel.name,
+      targetId: m.channel.id,
+      room: "messages",
+      extra: [`💬 ${data?.content || "لا يوجد"}`],
+      color: "#ED4245"
+    })
+  );
+});
+
+// =====================
+// MESSAGE EDIT
+// =====================
+client.on("messageUpdate", (oldM, newM) => {
+  if (!oldM.guild) return;
+
+  sendLog(oldM.guild, "messages",
+    wickLog({
+      type: "Messages",
+      userName: oldM.author?.tag,
+      userId: oldM.author?.id,
+      action: "تعديل رسالة",
+      targetName: oldM.channel.name,
+      targetId: oldM.channel.id,
+      room: "messages",
+      extra: [
+        `قبل: ${oldM.content || "لا يوجد"}`,
+        `بعد: ${newM.content || "لا يوجد"}`
+      ],
+      color: "#FEE75C"
+    })
+  );
+});
+
+// =====================
+// ROLE UPDATE (ADD/REMOVE)
+// =====================
+client.on("guildMemberUpdate", async (oldM, newM) => {
+  const added = newM.roles.cache.filter(r => !oldM.roles.cache.has(r.id));
+  const removed = oldM.roles.cache.filter(r => !newM.roles.cache.has(r.id));
+
+  if (!added.size && !removed.size) return;
+
+  const logs = await newM.guild.fetchAuditLogs({ type: 25, limit: 1 });
+  const entry = logs.entries.first();
+  const user = entry?.executor;
+
+  if (added.size) {
+    sendLog(newM.guild, "roles-add",
+      wickLog({
+        type: "Roles",
+        userName: user?.tag,
+        userId: user?.id,
+        action: "إعطاء رتبة",
+        targetName: newM.user.tag,
+        targetId: newM.user.id,
+        room: "roles-add",
+        extra: [`🎭 ${added.map(r => r.name).join(", ")}`]
+      })
+    );
+  }
+
+  if (removed.size) {
+    sendLog(newM.guild, "roles-remove",
+      wickLog({
+        type: "Roles",
+        userName: user?.tag,
+        userId: user?.id,
+        action: "إزالة رتبة",
+        targetName: newM.user.tag,
+        targetId: newM.user.id,
+        room: "roles-remove",
+        extra: [`❌ ${removed.map(r => r.name).join(", ")}`]
+      })
+    );
+  }
+});
+
+// =====================
+// ROLE DELETE + PROTECTION
+// =====================
+client.on("roleDelete", async (role) => {
+  const logs = await role.guild.fetchAuditLogs({ type: 32, limit: 1 });
+  const entry = logs.entries.first();
+  if (!entry) return;
+
+  const user = entry.executor;
+  const level = addThreat(user.id, 3);
+
+  sendLog(role.guild, "roles-delete",
+    wickLog({
+      type: "Roles",
+      userName: user.tag,
+      userId: user.id,
+      action: "حذف رتبة",
+      targetName: role.name,
+      targetId: role.id,
+      room: "roles-delete",
+      extra: [`⚠️ Threat: ${level}`],
+      color: "#FF0000"
+    })
+  );
+
+  const member = await role.guild.members.fetch(user.id).catch(() => null);
+
+  if (member) {
+    if (level >= 3) member.timeout(60000);
+    if (level >= 6) member.ban({ reason: "Role Delete" });
+  }
+});
+
+// =====================
+// KICK LOG
+// =====================
+client.on("guildMemberRemove", async (member) => {
+  const logs = await member.guild.fetchAuditLogs({ type: 20, limit: 1 });
+  const entry = logs.entries.first();
+
+  if (!entry || entry.target.id !== member.id) return;
+
+  sendLog(member.guild, "kick",
+    wickLog({
+      type: "Kick",
+      userName: entry.executor.tag,
+      userId: entry.executor.id,
+      action: "طرد عضو",
+      targetName: member.user.tag,
+      targetId: member.user.id,
+      room: "kick"
+    })
+  );
+});
+
+// =====================
+// BAN LOG
+// =====================
+client.on("guildBanAdd", async (ban) => {
+  const logs = await ban.guild.fetchAuditLogs({ type: 22, limit: 1 });
+  const entry = logs.entries.first();
+
+  sendLog(ban.guild, "ban",
+    wickLog({
+      type: "Ban",
+      userName: entry?.executor?.tag,
+      userId: entry?.executor?.id,
+      action: "حظر عضو",
+      targetName: ban.user.tag,
+      targetId: ban.user.id,
+      room: "ban"
+    })
+  );
+});
+
+// =====================
+// BOT ADD PROTECTION
+// =====================
+client.on("guildMemberAdd", async (member) => {
+  if (!member.user.bot) return;
+
+  const logs = await member.guild.fetchAuditLogs({ type: 28, limit: 1 });
+  const entry = logs.entries.first();
+  if (!entry) return;
+
+  const level = addThreat(entry.executor.id, 6);
+
+  await member.kick().catch(() => {});
+
+  const m = await member.guild.members.fetch(entry.executor.id).catch(() => null);
+  if (m) {
+    if (level >= 5) m.timeout(60000);
+    if (level >= 8) m.ban({ reason: "Bot Add" });
+  }
 });
 
 // =====================
