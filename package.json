@@ -1,4 +1,12 @@
-"dependencies": {
-  "discord.js": "^14.0.0",
-  "dotenv": "^16.0.0"
+{
+  "name": "system-bot",
+  "version": "1.0.0",
+  "description": "Discord Control Bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1"
+  }
 }
