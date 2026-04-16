@@ -42,64 +42,9 @@ function saveConfig() {
 }
 
 // =====================
-// WHITELIST
+// 🔥 حط آيديك هنا
 // =====================
-const whitelist = ["YOUR_ID_HERE"];
-
-// =====================
-// THREAT SYSTEM
-// =====================
-const threatData = new Map();
-
-function addThreat(id, amount) {
-  const now = Date.now();
-  const data = threatData.get(id) || { points: 0, last: now };
-
-  const diff = (now - data.last) / 1000;
-  data.points = Math.max(0, data.points - diff * 0.05);
-
-  data.points += amount;
-  data.last = now;
-
-  threatData.set(id, data);
-  return data.points;
-}
-
-// =====================
-// EMBED
-// =====================
-function wickLog({
-  type,
-  userName,
-  userId,
-  action,
-  targetName,
-  targetId,
-  room,
-  extra = [],
-  color
-}) {
-  return new EmbedBuilder()
-    .setColor(color || "#2f3136")
-    .setTitle(`📌 Log • ${type}`)
-    .addFields(
-      { name: "👤 المستخدم", value: `${userName}\n(${userId})` },
-      { name: "⚡ الحدث", value: action },
-      { name: "🎯 المستهدف", value: `${targetName}\n(${targetId})` },
-      { name: "🏷️ الروم", value: room, inline: true },
-      { name: "📊 إضافي", value: extra.length ? extra.join("\n") : "لا يوجد" }
-    )
-    .setTimestamp();
-}
-
-// =====================
-// SEND LOG
-// =====================
-function sendLog(guild, type, embed) {
-  const ch = guild.channels.cache.get(config.logs[type]);
-  if (!ch) return;
-  ch.send({ embeds: [embed] });
-}
+const whitelist = ["PUT_YOUR_ID_HERE"];
 
 // =====================
 // COMMANDS
@@ -116,15 +61,24 @@ const commands = [
 ].map(c => c.toJSON());
 
 async function register() {
-  const rest = new REST({ version: "10" }).setToken(TOKEN);
-  await rest.put(
-    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-    { body: commands }
-  );
+  try {
+    const rest = new REST({ version: "10" }).setToken(TOKEN);
+
+    console.log("⏳ Registering commands...");
+
+    await rest.put(
+      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+      { body: commands }
+    );
+
+    console.log("✅ Commands registered");
+  } catch (err) {
+    console.error("❌ Error registering:", err);
+  }
 }
 
 client.once("ready", async () => {
-  console.log(`Logged in as ${client.user.tag}`);
+  console.log(`✅ Logged in as ${client.user.tag}`);
   await register();
 });
 
@@ -132,122 +86,116 @@ client.once("ready", async () => {
 // INTERACTIONS
 // =====================
 client.on("interactionCreate", async (i) => {
-  if (!i.isChatInputCommand() && !i.isStringSelectMenu() && !i.isButton()) return;
+  try {
 
-  // =====================
-  // SETUP
-  // =====================
-  if (i.isChatInputCommand() && i.commandName === "setup") {
-    const g = i.guild;
+    // =====================
+    // COMMANDS
+    // =====================
+    if (i.isChatInputCommand()) {
+      console.log("📌 Command:", i.commandName);
 
-    const cat = await g.channels.create({
-      name: "🛡️ SYSTEM",
-      type: ChannelType.GuildCategory
-    });
+      // SETUP
+      if (i.commandName === "setup") {
+        return i.reply({
+          content: "✅ System Ready",
+          flags: MessageFlags.Ephemeral
+        });
+      }
 
-    const logs = {};
+      // DELETE ROOMS
+      if (i.commandName === "delete-rooms") {
 
-    for (const t of [
-      "messages","members","channels","security",
-      "roles-add","roles-remove","roles-delete",
-      "timeout","kick","ban"
-    ]) {
-      const ch = await g.channels.create({
-        name: `log-${t}`,
-        type: ChannelType.GuildText,
-        parent: cat.id
-      });
+        if (!whitelist.includes(i.user.id)) {
+          return i.reply({ content: "❌ ما عندك صلاحية", ephemeral: true });
+        }
 
-      logs[t] = ch.id;
+        const channels = i.guild.channels.cache
+          .filter(c => c.type === ChannelType.GuildText)
+          .map(c => ({
+            label: c.name,
+            value: c.id
+          }))
+          .slice(0, 25);
+
+        const menu = new StringSelectMenuBuilder()
+          .setCustomId("select_delete_rooms")
+          .setPlaceholder("اختر الرومات")
+          .setMinValues(1)
+          .setMaxValues(5)
+          .addOptions(channels);
+
+        const row = new ActionRowBuilder().addComponents(menu);
+
+        return i.reply({
+          content: "اختر الرومات",
+          components: [row],
+          ephemeral: true
+        });
+      }
     }
 
-    config.logs = logs;
-    saveConfig();
+    // =====================
+    // SELECT MENU
+    // =====================
+    if (i.isStringSelectMenu()) {
+      console.log("📌 Select Used");
 
-    return i.reply({
-      content: "✅ System Ready",
-      flags: MessageFlags.Ephemeral
-    });
-  }
+      if (i.customId === "select_delete_rooms") {
+        const selected = i.values;
 
-  // =====================
-  // DELETE ROOMS COMMAND
-  // =====================
-  if (i.isChatInputCommand() && i.commandName === "delete-rooms") {
+        const confirmBtn = new ButtonBuilder()
+          .setCustomId(`confirm_delete_${selected.join(",")}`)
+          .setLabel("تأكيد الحذف")
+          .setStyle(ButtonStyle.Danger);
 
-    if (!whitelist.includes(i.user.id)) {
-      return i.reply({ content: "❌ ما عندك صلاحية", ephemeral: true });
+        const row = new ActionRowBuilder().addComponents(confirmBtn);
+
+        return i.update({
+          content: `⚠️ حذف ${selected.length} روم`,
+          components: [row]
+        });
+      }
     }
 
-    const channels = i.guild.channels.cache
-      .filter(c => c.type === ChannelType.GuildText)
-      .map(c => ({
-        label: c.name,
-        value: c.id
-      }))
-      .slice(0, 25);
+    // =====================
+    // BUTTON
+    // =====================
+    if (i.isButton()) {
+      console.log("📌 Button Click");
 
-    const menu = new StringSelectMenuBuilder()
-      .setCustomId("select_delete_rooms")
-      .setPlaceholder("اختر الرومات")
-      .setMinValues(1)
-      .setMaxValues(5)
-      .addOptions(channels);
+      if (i.customId.startsWith("confirm_delete_")) {
 
-    const row = new ActionRowBuilder().addComponents(menu);
+        if (!whitelist.includes(i.user.id)) {
+          return i.reply({ content: "❌ ما عندك صلاحية", ephemeral: true });
+        }
 
-    return i.reply({
-      content: "اختر الرومات اللي تبي تحذفها",
-      components: [row],
-      ephemeral: true
-    });
-  }
+        const ids = i.customId.replace("confirm_delete_", "").split(",");
 
-  // =====================
-  // SELECT MENU
-  // =====================
-  if (i.isStringSelectMenu() && i.customId === "select_delete_rooms") {
+        for (const id of ids) {
+          const ch = i.guild.channels.cache.get(id);
+          if (!ch) continue;
 
-    const selected = i.values;
+          if (Object.values(config.logs).includes(ch.id)) continue;
+          if (ch.id === i.channel.id) continue;
 
-    const confirmBtn = new ButtonBuilder()
-      .setCustomId(`confirm_delete_${selected.join(",")}`)
-      .setLabel("تأكيد الحذف")
-      .setStyle(ButtonStyle.Danger);
+          await ch.delete().catch(() => {});
+        }
 
-    const row = new ActionRowBuilder().addComponents(confirmBtn);
-
-    return i.update({
-      content: `⚠️ بتسوي حذف لـ ${selected.length} روم`,
-      components: [row]
-    });
-  }
-
-  // =====================
-  // CONFIRM DELETE
-  // =====================
-  if (i.isButton() && i.customId.startsWith("confirm_delete_")) {
-
-    if (!whitelist.includes(i.user.id)) {
-      return i.reply({ content: "❌ ما عندك صلاحية", ephemeral: true });
+        return i.update({
+          content: "✅ تم الحذف",
+          components: []
+        });
+      }
     }
 
-    const ids = i.customId.replace("confirm_delete_", "").split(",");
+  } catch (err) {
+    console.error("❌ Interaction Error:", err);
 
-    for (const id of ids) {
-      const ch = i.guild.channels.cache.get(id);
-      if (!ch) continue;
-
-      if (Object.values(config.logs).includes(ch.id)) continue;
-      if (ch.id === i.channel.id) continue;
-
-      await ch.delete().catch(() => {});
+    if (i.replied || i.deferred) {
+      i.followUp({ content: "❌ صار خطأ", ephemeral: true }).catch(() => {});
+    } else {
+      i.reply({ content: "❌ صار خطأ", ephemeral: true }).catch(() => {});
     }
-
-    return i.update({
-      content: "✅ تم حذف الرومات",
-      components: []
-    });
   }
 });
 
