@@ -1,11 +1,24 @@
 {
-  "adminRole": null,
-  "channels": {
-    "control": null,
-    "logs": {
-      "messageDelete": null,
-      "messageEdit": null,
-      "joinLeave": null
-    }
+  "token": "PUT_BOT_TOKEN",
+  "guildId": "PUT_SERVER_ID",
+  "probotId": "282859044593598464",
+  "creditReceiverId": "PUT_YOUR_ID",
+  "categoryId": "PUT_CATEGORY_ID",
+  "logChannelId": "PUT_LOG_CHANNEL_ID",
+
+  "tax": 1.05,
+
+  "prices": {
+    "bronze": 25000,
+    "silver": 50000,
+    "gold": 100000,
+    "diamond": 250000
+  },
+
+  "durations": {
+    "bronze": "1d",
+    "silver": "3d",
+    "gold": "7d",
+    "diamond": "30d"
   }
 }
