@@ -1,9 +1,14 @@
 {
   "token": "PUT_BOT_TOKEN",
+
   "guildId": "PUT_SERVER_ID",
+
   "probotId": "282859044593598464",
+
   "creditReceiverId": "PUT_YOUR_ID",
+
   "categoryId": "PUT_CATEGORY_ID",
+
   "logChannelId": "PUT_LOG_CHANNEL_ID",
 
   "tax": 1.05,
