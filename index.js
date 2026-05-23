@@ -2,13 +2,11 @@ const {
   Client,
   GatewayIntentBits,
   ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  EmbedBuilder,
   StringSelectMenuBuilder,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  EmbedBuilder,
   PermissionsBitField,
   ChannelType
 } = require("discord.js");
@@ -31,9 +29,13 @@ const client = new Client({
   ]
 });
 
+// ================= READY =================
+
 client.once("ready", async () => {
 
   console.log(`${client.user.tag} جاهز`);
+
+  // حذف الإعلانات المنتهية
 
   setInterval(async () => {
 
@@ -53,19 +55,26 @@ client.once("ready", async () => {
             client.guilds.cache.get(config.guildId);
 
           const channel =
-            guild.channels.cache.get(data.channelId);
+            guild.channels.cache.get(
+              data.channelId
+            );
 
-          if (channel) await channel.delete();
+          if (channel)
+            await channel.delete();
 
-          const logChannel =
+          const log =
             guild.channels.cache.get(
               config.logChannelId
             );
 
-          if (logChannel) {
-            logChannel.send(
-              `🗑️ انتهى إعلان <@${data.userId}>`
-            );
+          if (log) {
+
+            log.send(`
+🗑️ انتهى إعلان
+
+👤 <@${data.userId}>
+📢 ${data.channelName}
+            `);
           }
 
           await db.delete(item.id);
@@ -77,7 +86,10 @@ client.once("ready", async () => {
     }
 
   }, 30000);
+
 });
+
+// ================= MESSAGE =================
 
 client.on("messageCreate", async (message) => {
 
@@ -93,46 +105,48 @@ client.on("messageCreate", async (message) => {
 
       .setDescription(`
 🥉 برونزي — ${config.prices.bronze}
+
 🥈 فضي — ${config.prices.silver}
+
 🥇 ذهبي — ${config.prices.gold}
-💎 الماسي — ${config.prices.diamond}
+
+💎 ماسي — ${config.prices.diamond}
       `)
 
       .setColor("Blue");
 
-    const row = new ActionRowBuilder()
+    const row =
+      new ActionRowBuilder()
 
-      .addComponents(
+        .addComponents(
 
-        new StringSelectMenuBuilder()
+          new StringSelectMenuBuilder()
 
-          .setCustomId("ad_type")
+            .setCustomId("buy_ad")
 
-          .setPlaceholder("اختر نوع الإعلان")
+            .setPlaceholder(
+              "اختر نوع الإعلان"
+            )
 
-          .addOptions([
-            {
-              label: "برونزي",
-              value: "bronze",
-              description: "إعلان يوم"
-            },
-            {
-              label: "فضي",
-              value: "silver",
-              description: "إعلان 3 أيام"
-            },
-            {
-              label: "ذهبي",
-              value: "gold",
-              description: "إعلان أسبوع"
-            },
-            {
-              label: "ماسي",
-              value: "diamond",
-              description: "إعلان شهر"
-            }
-          ])
-      );
+            .addOptions([
+              {
+                label: "برونزي",
+                value: "bronze"
+              },
+              {
+                label: "فضي",
+                value: "silver"
+              },
+              {
+                label: "ذهبي",
+                value: "gold"
+              },
+              {
+                label: "ماسي",
+                value: "diamond"
+              }
+            ])
+        );
 
     return message.channel.send({
       embeds: [embed],
@@ -143,30 +157,42 @@ client.on("messageCreate", async (message) => {
   // ================= ADMIN =================
 
   if (
-    message.member.permissions.has("Administrator")
+    message.member.permissions.has(
+      "Administrator"
+    )
   ) {
 
-    // تغيير السعر
+    // تغيير سعر
 
-    if (message.content.startsWith("!setprice")) {
+    if (
+      message.content.startsWith(
+        "!setprice"
+      )
+    ) {
 
-      const args = message.content.split(" ");
+      const args =
+        message.content.split(" ");
 
       const type = args[1];
 
-      const price = Number(args[2]);
+      const price =
+        Number(args[2]);
 
-      if (!type || !price) {
+      if (!type || !price)
         return message.reply(
-          "!setprice bronze 50000"
+          "!setprice gold 100000"
         );
-      }
 
-      config.prices[type] = price;
+      config.prices[type] =
+        price;
 
       fs.writeFileSync(
         "./config.json",
-        JSON.stringify(config, null, 2)
+        JSON.stringify(
+          config,
+          null,
+          2
+        )
       );
 
       return message.reply(
@@ -174,25 +200,34 @@ client.on("messageCreate", async (message) => {
       );
     }
 
-    // الضريبة
+    // تغيير ضريبة
 
-    if (message.content.startsWith("!settax")) {
+    if (
+      message.content.startsWith(
+        "!settax"
+      )
+    ) {
 
-      const args = message.content.split(" ");
+      const args =
+        message.content.split(" ");
 
-      const tax = Number(args[1]);
+      const tax =
+        Number(args[1]);
 
-      if (!tax) {
+      if (!tax)
         return message.reply(
           "!settax 1.05"
         );
-      }
 
       config.tax = tax;
 
       fs.writeFileSync(
         "./config.json",
-        JSON.stringify(config, null, 2)
+        JSON.stringify(
+          config,
+          null,
+          2
+        )
       );
 
       return message.reply(
@@ -200,11 +235,14 @@ client.on("messageCreate", async (message) => {
       );
     }
 
-    // الإحصائيات
+    // إحصائيات
 
-    if (message.content === "!stats") {
+    if (
+      message.content === "!stats"
+    ) {
 
-      const ads = await db.all();
+      const ads =
+        await db.all();
 
       const active =
         ads.filter(x =>
@@ -215,12 +253,89 @@ client.on("messageCreate", async (message) => {
 📊 الإعلانات النشطة: ${active}
       `);
     }
+
+    // تمديد إعلان
+
+    if (
+      message.content.startsWith(
+        "!extend"
+      )
+    ) {
+
+      const args =
+        message.content.split(" ");
+
+      const channelId =
+        args[1];
+
+      const duration =
+        args[2];
+
+      const data =
+        await db.get(
+          `ad_${channelId}`
+        );
+
+      if (!data)
+        return message.reply(
+          "الإعلان غير موجود"
+        );
+
+      data.endsAt +=
+        ms(duration);
+
+      await db.set(
+        `ad_${channelId}`,
+        data
+      );
+
+      return message.reply(
+        `✅ تم تمديد الإعلان`
+      );
+    }
+
+    // حذف إعلان
+
+    if (
+      message.content.startsWith(
+        "!removead"
+      )
+    ) {
+
+      const args =
+        message.content.split(" ");
+
+      const channelId =
+        args[1];
+
+      const guild =
+        client.guilds.cache.get(
+          config.guildId
+        );
+
+      const channel =
+        guild.channels.cache.get(
+          channelId
+        );
+
+      if (channel)
+        await channel.delete();
+
+      await db.delete(
+        `ad_${channelId}`
+      );
+
+      return message.reply(
+        "🗑️ تم حذف الإعلان"
+      );
+    }
   }
 
   // ================= PROBOT =================
 
   if (
-    message.author.id === config.probotId
+    message.author.id ===
+    config.probotId
   ) {
 
     const pending =
@@ -230,11 +345,14 @@ client.on("messageCreate", async (message) => {
 
     const finalPrice =
       Math.floor(
-        pending.price * config.tax
+        pending.price *
+        config.tax
       ).toLocaleString();
 
     if (
-      message.content.includes(finalPrice) &&
+      message.content.includes(
+        finalPrice
+      ) &&
       message.content.includes(
         config.creditReceiverId
       )
@@ -258,22 +376,38 @@ client.on("messageCreate", async (message) => {
           name:
             `${emojis[pending.type]}-${pending.name}`,
 
-          type: ChannelType.GuildText,
+          type:
+            ChannelType.GuildText,
 
-          parent: config.categoryId,
+          parent:
+            config.categoryId,
 
           permissionOverwrites: [
+
             {
-              id: guild.roles.everyone,
+              id:
+                guild.roles.everyone,
+
               deny: [
-                PermissionsBitField.Flags.SendMessages
+                PermissionsBitField
+                  .Flags
+                  .SendMessages
               ]
             },
+
             {
-              id: pending.userId,
+              id:
+                pending.userId,
+
               allow: [
-                PermissionsBitField.Flags.ViewChannel,
-                PermissionsBitField.Flags.SendMessages
+
+                PermissionsBitField
+                  .Flags
+                  .ViewChannel,
+
+                PermissionsBitField
+                  .Flags
+                  .SendMessages
               ]
             }
           ]
@@ -305,50 +439,67 @@ client.on("messageCreate", async (message) => {
 
       const endsAt =
         Date.now() +
-        ms(pending.duration);
+        ms(
+          pending.duration
+        );
 
       await db.set(
         `ad_${channel.id}`,
         {
-          userId: pending.userId,
-          channelId: channel.id,
+          userId:
+            pending.userId,
+
+          channelId:
+            channel.id,
+
+          channelName:
+            channel.name,
+
           endsAt
         }
       );
 
-      const logChannel =
+      const log =
         guild.channels.cache.get(
           config.logChannelId
         );
 
-      if (logChannel) {
-        logChannel.send(`
+      if (log) {
+
+        log.send(`
 ✅ إعلان جديد
+
 👤 <@${pending.userId}>
+
 📦 ${pending.type}
+
 💰 ${pending.price}
         `);
       }
 
-      await db.delete("pending");
+      await db.delete(
+        "pending"
+      );
     }
   }
+
 });
 
-// ================= INTERACTIONS =================
+// ================= INTERACTION =================
 
 client.on(
   "interactionCreate",
   async interaction => {
 
-    // SELECT MENU
+    // ================= SELECT =================
 
     if (
       interaction.isStringSelectMenu()
     ) {
 
       if (
-        interaction.customId === "ad_type"
+        interaction.customId ===
+        "buy_ad"
       ) {
 
         const type =
@@ -392,11 +543,13 @@ client.on(
             );
 
         modal.addComponents(
+
           new ActionRowBuilder()
             .addComponents(name),
 
           new ActionRowBuilder()
             .addComponents(text)
+
         );
 
         return interaction.showModal(
@@ -405,7 +558,7 @@ client.on(
       }
     }
 
-    // MODAL
+    // ================= MODAL =================
 
     if (
       interaction.isModalSubmit()
@@ -439,19 +592,28 @@ client.on(
         const duration =
           config.durations[type];
 
-        await db.set("pending", {
-          userId:
-            interaction.user.id,
-          name,
-          text,
-          type,
-          duration,
-          price
-        });
+        await db.set(
+          "pending",
+          {
+            userId:
+              interaction.user.id,
+
+            type,
+
+            name,
+
+            text,
+
+            duration,
+
+            price
+          }
+        );
 
         const finalPrice =
           Math.floor(
-            price * config.tax
+            price *
+            config.tax
           );
 
         return interaction.reply({
@@ -459,12 +621,12 @@ client.on(
           content:
 `
 💰 المطلوب:
-${finalPrice} كردت
+${finalPrice}
 
 📤 حول إلى:
 <@${config.creditReceiverId}>
 
-⏳ بعد التحويل يتم إنشاء إعلانك تلقائي
+⏳ بعد الدفع يتم إنشاء إعلانك تلقائي
           `,
 
           ephemeral: true
